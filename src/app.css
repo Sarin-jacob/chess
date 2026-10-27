@@ -1,0 +1,85 @@
+/* Ma Shan Zheng (OFL), subset to the glyphs we use — see scripts/subset-font.py */
+@font-face {
+  font-family: 'Ma Shan Zheng';
+  src: url('/fonts/mashanzheng-subset.woff2') format('woff2');
+  font-display: swap;
+}
+
+:root {
+  /* Fallback palette (Frozen Peak); realms overwrite these at runtime. */
+  --bg1: #0b1a2e;
+  --bg2: #2d5878;
+  --bg3: #9cc7e4;
+  --ink: #eaf6ff;
+  --muted: #9fbdd4;
+  --accent: #9fe0ff;
+  --accent-ink: #06233a;
+  --panel: rgba(10, 30, 52, 0.55);
+  --panel-border: rgba(190, 230, 255, 0.22);
+  --light: #e6f1f8;
+  --dark: #7c9bb6;
+  --glow: rgba(160, 225, 255, 0.45);
+  --mountain: #d9ecf8;
+
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--ink);
+  background: var(--bg1);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.6s;
+}
+:root[data-realm='spring'],
+:root[data-realm='day'] {
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100dvh; overflow-x: hidden; }
+
+button,
+.btn {
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, transform 0.1s, opacity 0.2s;
+}
+button:hover:not(:disabled),
+.btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { opacity: 0.4; cursor: default; }
+button:focus-visible,
+.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, white); }
+
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+}
+.seg button { border: 0; background: transparent; padding: 0.5rem 0.3rem; }
+.seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.seg.small button { padding: 0.35rem 0.3rem; font-size: 0.82rem; }
+
+h3 { font-family: 'Cinzel', serif; font-weight: 700; letter-spacing: 0.05em; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 3px; }
+* { scrollbar-width: thin; scrollbar-color: var(--panel-border) transparent; }
