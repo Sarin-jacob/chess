@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Component } from 'svelte';
   import Board from './lib/Board.svelte';
   import { lastUnfinished } from './lib/db';
   import { LEVEL_NAMES } from './lib/engine';
@@ -26,6 +26,17 @@
   let joinCode = $state('');
   let ready = $state(false);
   let dismissed = $state('');
+  // The 3D board pulls in three.js, so it is only fetched once someone asks for it.
+  let Board3D = $state<Component<any> | null>(null);
+  let load3d = $state<'idle' | 'loading' | 'failed'>('idle');
+  $effect(() => {
+    if (!settings.view3d || Board3D || load3d === 'loading') return;
+    load3d = 'loading';
+    import('./lib/Board3D.svelte')
+      .then((m) => { Board3D = m.default; load3d = 'idle'; })
+      .catch((e) => { console.warn('3D view failed to load', e); load3d = 'failed'; });
+  });
+
   let intro = $state<{ key: number; name: string; hanzi: string; meaning: string; season: string } | null>(null);
 
   /** Pick up an invite link (#join=…), including one opened in an already-open tab. */
@@ -154,6 +165,32 @@
 
       {@render bar(top)}
       <div class="board-wrap">
+        {#if settings.view3d && Board3D}
+          <Board3D
+            fen={game.shownFen}
+            orientation={game.orientation}
+            movable={game.movable}
+            lastMove={game.shownMove}
+            check={game.inCheckSquare()}
+            hint={game.hint}
+            coords={settings.coords}
+            realm={game.realm}
+            weather={settings.particles}
+            status={game.over ? verdict : game.thinking ? 'Opponent meditating…' : game.active ? (game.turn === 'w' ? 'White' : 'Black') + ' to move' : ''}
+            legalFrom={(sq: string) => game.legalFrom(sq)}
+            onmove={(f: string, t: string, p?: string) => game.tryMove(f, t, p)}
+            onflip={() => game.flip()}
+          />
+        {:else if settings.view3d}
+          <div class="loading3d">
+            {#if load3d === 'failed'}
+              <p>The 3D realm couldn't be loaded (offline before it was ever opened?).</p>
+              <button onclick={() => { load3d = 'idle'; settings.view3d = false; }}>Use the 2D board</button>
+            {:else}
+              <p>Raising the realm…</p>
+            {/if}
+          </div>
+        {:else}
         <Board
           fen={game.shownFen}
           orientation={game.orientation}
@@ -165,6 +202,7 @@
           legalFrom={(sq) => game.legalFrom(sq)}
           onmove={(f, t, p) => game.tryMove(f, t, p)}
         />
+        {/if}
         {#if ready && !game.active}
           <div class="gate">
             <div class="gate-card">
@@ -191,6 +229,7 @@
           <button onclick={() => game.askHint()} disabled={!game.movable}>✦ Hint</button>
         {/if}
         <button onclick={() => game.flip()}>⇅ Flip</button>
+        <button onclick={() => (settings.view3d = !settings.view3d)} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view of the realm'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
         {#if game.mode === 'lan' && game.drawOffer === 'received'}
           <button class="primary" onclick={() => game.answerDraw(true)}>Accept draw</button>
           <button onclick={() => game.answerDraw(false)}>Decline</button>
@@ -312,6 +351,20 @@
     justify-self: center;
   }
   .board-wrap { position: relative; }
+  .loading3d {
+    aspect-ratio: 1;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.6rem;
+    text-align: center;
+    padding: 1rem;
+    border-radius: 6px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    color: var(--muted);
+    font-family: 'Cinzel', serif;
+  }
   .gate {
     position: absolute;
     inset: 0;

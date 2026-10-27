@@ -10,6 +10,8 @@ export interface SettingsData {
   name: string;
   autoFlip: boolean;
   useStun: boolean;
+  /** Immersive three.js board instead of the flat one. */
+  view3d: boolean;
 }
 
 const KEY = 'frost-chess:settings';
@@ -23,6 +25,7 @@ const DEFAULTS: SettingsData = {
   name: 'Wanderer',
   autoFlip: false,
   useStun: true,
+  view3d: false,
 };
 
 function load(): SettingsData {

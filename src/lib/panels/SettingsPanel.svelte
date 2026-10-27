@@ -2,10 +2,11 @@
   import { GLOSSARY } from '../realms';
   import { settings } from '../settings.svelte';
 
-  const toggles: { key: 'sound' | 'haptics' | 'particles' | 'coords' | 'autoFlip' | 'useStun'; label: string; hint: string }[] = [
+  const toggles: { key: 'sound' | 'haptics' | 'particles' | 'coords' | 'autoFlip' | 'useStun' | 'view3d'; label: string; hint: string }[] = [
     { key: 'sound', label: 'Sound', hint: 'Wood knocks and temple bells' },
     { key: 'haptics', label: 'Haptics', hint: 'Vibrate on moves (supported phones)' },
     { key: 'particles', label: 'Weather', hint: 'Snow, embers, petals and friends' },
+    { key: 'view3d', label: 'Immersive 3D view', hint: 'Walk the realm in 3D; drag to orbit (uses more battery)' },
     { key: 'coords', label: 'Coordinates', hint: 'Files and ranks on the board' },
     { key: 'autoFlip', label: 'Auto-flip', hint: 'Turn the board each move on the same device' },
     { key: 'useStun', label: 'Public STUN for LAN', hint: 'Helps devices find each other; needs internet' },
