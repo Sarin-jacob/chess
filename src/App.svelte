@@ -239,11 +239,13 @@
         <button onclick={() => (settings.view3d = !settings.view3d)} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view of the realm'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
         {#if !game.active}
           <!-- Draw and resign only make sense mid-match. -->
-        {:else if game.mode === 'lan' && game.drawOffer === 'received'}
+        {:else if game.mode !== 'lan'}
+          <button onclick={() => game.resign()} disabled={game.over || !game.history.length}>⚑ Resign</button>
+        {:else if game.drawOffer === 'received'}
           <button class="primary" onclick={() => game.answerDraw(true)}>Accept draw</button>
           <button onclick={() => game.answerDraw(false)}>Decline</button>
         {:else}
-          <button onclick={() => game.offerDraw()} disabled={!game.active || game.over || game.drawOffer === 'sent' || (game.mode === 'lan' && game.linkState !== 'open')}>
+          <button onclick={() => game.offerDraw()} disabled={game.over || game.drawOffer === 'sent' || game.linkState !== 'open'}>
             {game.drawOffer === 'sent' ? 'Draw offered' : '½ Draw'}
           </button>
           <button onclick={() => game.resign()} disabled={game.over || !game.history.length}>⚑ Resign</button>

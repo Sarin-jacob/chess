@@ -6,8 +6,8 @@
 import type { Clocks, Rules } from './db';
 
 export type LanMessage =
-  | { t: 'hello'; v: 1; name: string; hostColor: 'w' | 'b'; realm: string; pgn: string; gameId: string; rules?: Rules; clock?: Clocks }
-  | { t: 'hi'; name: string }
+  | { t: 'hello'; v: 1; name: string; hostColor: 'w' | 'b'; realm: string; pgn: string; gameId: string; rules?: Rules; clock?: Clocks; auto?: boolean }
+  | { t: 'hi'; name: string; auto?: boolean }
   | { t: 'move'; uci: string; ply: number; clock?: Clocks }
   | { t: 'flag'; color: 'w' | 'b' }
   | { t: 'resign' }

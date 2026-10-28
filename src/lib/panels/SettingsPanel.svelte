@@ -1,5 +1,6 @@
 <script lang="ts">
   import { GLOSSARY } from '../realms';
+  import { randomName } from '../names';
   import { settings } from '../settings.svelte';
 
   const toggles: { key: 'sound' | 'haptics' | 'particles' | 'coords' | 'useStun' | 'view3d'; label: string; hint: string }[] = [
@@ -15,7 +16,11 @@
 <section>
   <label class="name">
     <span>Your name</span>
-    <input bind:value={settings.name} maxlength="24" />
+    <span class="row">
+      <input bind:value={settings.name} oninput={() => (settings.nameAuto = false)} maxlength="24" />
+      <button type="button" onclick={() => { settings.name = randomName(settings.name); settings.nameAuto = true; }} title="Draw a new random name">🎲</button>
+    </span>
+    {#if settings.nameAuto}<small>Random name — it changes by itself if a LAN rival has the same one.</small>{/if}
   </label>
   {#each toggles as t}
     <label class="toggle">
@@ -36,6 +41,9 @@
 <style>
   section { display: grid; gap: 0.5rem; }
   .name { display: grid; gap: 0.3rem; font-size: 0.85rem; color: var(--muted); }
+  .name .row { display: flex; gap: 0.4rem; }
+  .name .row input { flex: 1; min-width: 0; }
+  .name small { font-size: 0.72rem; }
   .name input {
     font: inherit;
     color: var(--ink);

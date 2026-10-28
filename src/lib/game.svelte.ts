@@ -3,6 +3,7 @@ import { saveGame, type Clocks, type GameRecord, type Mode, type Result, type Ru
 import { bestMove, cancelEngine, LEVEL_NAMES } from './engine';
 import { play, type Fx } from './fx';
 import { LanLink, type LanMessage, type LinkState } from './lan';
+import { randomName } from './names';
 import { applyRealm, randomRealm, realmById, type Realm } from './realms';
 import { settings } from './settings.svelte';
 
@@ -322,13 +323,8 @@ class Game {
   }
 
   offerDraw() {
-    if (!this.active || this.over) return;
-    if (this.mode !== 'lan') {
-      this.finish('1/2-1/2', 'agreement');
-      this.fx('draw');
-      this.persist();
-      return;
-    }
+    // Draws by agreement need a rival to agree, so they only exist in LAN duels.
+    if (!this.active || this.over || this.mode !== 'lan') return;
     if (this.drawOffer === 'received') return this.answerDraw(true);
     this.drawOffer = 'sent';
     this.link?.send({ t: 'draw', action: 'offer' });
@@ -453,7 +449,7 @@ class Game {
     link.onState = (s) => {
       this.linkState = s;
       if (s === 'open' && this.isHost) this.sendHello();
-      if (s === 'open' && !this.isHost) link.send({ t: 'hi', name: settings.name });
+      if (s === 'open' && !this.isHost) link.send({ t: 'hi', name: settings.name, auto: settings.nameAuto });
     };
     link.onMessage = (m) => this.onLan(m);
     this.link = link;
@@ -487,7 +483,7 @@ class Game {
   private sendHello() {
     this.link?.send({
       t: 'hello', v: 1, name: settings.name, hostColor: this.you!, realm: this.realm.id, pgn: this.chess.pgn(), gameId: this.id,
-      rules: { ...this.rules }, clock: this.liveClocks(),
+      rules: { ...this.rules }, clock: this.liveClocks(), auto: settings.nameAuto,
     });
   }
 
@@ -504,6 +500,7 @@ class Game {
         this.you = other(m.hostColor);
         this.orientation = this.you;
         this.opponent = m.name;
+        this.dedupeName(m.name, m.auto);
         this.startedAt = Date.now();
         this.result = '*';
         this.reason = '';
@@ -521,6 +518,7 @@ class Game {
       }
       case 'hi':
         this.opponent = m.name;
+        this.dedupeName(m.name, m.auto);
         this.writeHeaders();
         this.persist();
         break;
@@ -567,6 +565,19 @@ class Game {
       case 'emote':
         break;
     }
+  }
+
+  /**
+   * Two duellists shouldn't share a name. Only generated names give way: the guest's first,
+   * otherwise the host's. Names someone typed themselves are left alone.
+   */
+  private dedupeName(theirs: string, theirsAuto = false) {
+    if (theirs !== settings.name || !settings.nameAuto) return;
+    if (this.isHost && theirsAuto) return; // the guest will re-roll instead
+    settings.name = randomName(theirs);
+    this.link?.send({ t: 'hi', name: settings.name, auto: true });
+    this.writeHeaders();
+    this.persist();
   }
 
   offerRematch() {
