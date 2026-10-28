@@ -22,7 +22,7 @@ const at = (g: BufferGeometry, x: number, y: number, z: number) => g.translate(x
 
 function merge(parts: BufferGeometry[]): BufferGeometry {
   // Lathe/extrude/box disagree on which attributes they carry; keep only what the material needs.
-  for (const p of parts) for (const k of Object.keys(p.attributes)) if (k !== 'position' && k !== 'normal') p.deleteAttribute(k);
+  for (const p of parts) for (const k of Object.keys(p.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') p.deleteAttribute(k);
   const g = mergeGeometries(parts)!;
   parts.forEach((p) => p.dispose());
   g.computeBoundingSphere();

@@ -113,7 +113,13 @@
       game.offerRematch();
       return;
     }
-    game.newGame({ mode: game.mode, color: game.mode === 'ai' ? (game.you === 'w' ? 'b' : 'w') : undefined, level: settings.level });
+    game.newGame({ mode: game.mode, color: game.mode === 'ai' ? (game.you === 'w' ? 'b' : 'w') : undefined, level: settings.level, rules: game.rules });
+  }
+
+  function clockText(ms: number) {
+    const s = Math.ceil(ms / 1000);
+    if (ms < 10_000) return (Math.ceil(ms / 100) / 10).toFixed(1);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }
 
   function onkey(e: KeyboardEvent) {
@@ -160,7 +166,16 @@
             {#each caps as p}<img src={PIECES[(c === 'w' ? 'b' : 'w') + p]} alt={p} />{/each}
             {#if adv > 0}<em>+{adv}</em>{/if}
           </span>
+          {#if game.active && game.rules.clock}
+            {@const ms = game.remaining(c)}
+            <span class="clock" class:run={game.clockRunning && game.turn === c} class:low={ms < 20_000} title="Time left">{clockText(ms)}</span>
+          {/if}
         </div>
+      {/snippet}
+
+      {#snippet hud3d()}
+        {@render bar(top)}
+        {@render bar(bottom)}
       {/snippet}
 
       {@render bar(top)}
@@ -175,7 +190,7 @@
             hint={game.hint}
             coords={settings.coords}
             realm={game.realm}
-            weather={settings.particles}
+            hud={hud3d}
             status={game.over ? verdict : game.thinking ? 'Opponent meditating…' : game.active ? (game.turn === 'w' ? 'White' : 'Black') + ' to move' : ''}
             legalFrom={(sq: string) => game.legalFrom(sq)}
             onmove={(f: string, t: string, p?: string) => game.tryMove(f, t, p)}
@@ -203,42 +218,36 @@
           onmove={(f, t, p) => game.tryMove(f, t, p)}
         />
         {/if}
-        {#if ready && !game.active}
-          <div class="gate">
-            <div class="gate-card">
-              <span class="hz" title="Chess">棋</span>
-              <p>The board is set. Choose your duel.</p>
-              <div class="gate-row">
-                <button class="primary" onclick={() => game.newGame({ mode: 'ai', color: 'random', level: settings.level })}>Vs Sect AI</button>
-                <button onclick={() => game.newGame({ mode: 'local' })}>Same device</button>
-                <button onclick={() => (tab = 'play')}>LAN duel…</button>
-              </div>
-              <small>Opponent: {LEVEL_NAMES[settings.level - 1]} · change in Play</small>
-            </div>
-          </div>
-        {/if}
         {#if game.viewPly !== null}
           <button class="live-pill" onclick={() => game.step('end')}>Reviewing move {game.viewPly} · back to live ↦</button>
         {/if}
       </div>
       {@render bar(bottom)}
 
+      {#if ready && !game.active}
+        <p class="idle-tip">
+          No duel underway — the board is yours to admire.
+          <button class="link" onclick={() => (tab = 'play')}>Set up a match in Play</button>
+        </p>
+      {/if}
       <div class="controls">
-        {#if game.mode !== 'lan'}
-          <button onclick={() => game.undo()} disabled={!game.active || !game.history.length}>↶ Undo</button>
-          <button onclick={() => game.askHint()} disabled={!game.movable}>✦ Hint</button>
+        {#if game.active && game.mode !== 'lan'}
+          {#if game.rules.undo}<button onclick={() => game.undo()} disabled={!game.history.length}>↶ Undo</button>{/if}
+          {#if game.rules.hints}<button onclick={() => game.askHint()} disabled={!game.movable}>✦ Hint</button>{/if}
         {/if}
-        <button onclick={() => game.flip()}>⇅ Flip</button>
+        {#if game.canFlip}<button onclick={() => game.flip()}>⇅ Flip</button>{/if}
         <button onclick={() => (settings.view3d = !settings.view3d)} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view of the realm'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
-        {#if game.mode === 'lan' && game.drawOffer === 'received'}
+        {#if !game.active}
+          <!-- Draw and resign only make sense mid-match. -->
+        {:else if game.mode === 'lan' && game.drawOffer === 'received'}
           <button class="primary" onclick={() => game.answerDraw(true)}>Accept draw</button>
           <button onclick={() => game.answerDraw(false)}>Decline</button>
         {:else}
           <button onclick={() => game.offerDraw()} disabled={!game.active || game.over || game.drawOffer === 'sent' || (game.mode === 'lan' && game.linkState !== 'open')}>
             {game.drawOffer === 'sent' ? 'Draw offered' : '½ Draw'}
           </button>
+          <button onclick={() => game.resign()} disabled={game.over || !game.history.length}>⚑ Resign</button>
         {/if}
-        <button onclick={() => game.resign()} disabled={!game.active || game.over || !game.history.length}>⚑ Resign</button>
       </div>
     </div>
 
@@ -365,35 +374,6 @@
     color: var(--muted);
     font-family: 'Cinzel', serif;
   }
-  .gate {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    z-index: 6;
-    background: color-mix(in srgb, var(--bg1) 45%, transparent);
-    backdrop-filter: blur(2px);
-    border-radius: 6px;
-    padding: 1rem;
-    animation: fade 0.4s;
-  }
-  .gate-card {
-    display: grid;
-    justify-items: center;
-    gap: 0.6rem;
-    text-align: center;
-    padding: 1.2rem 1.4rem;
-    border-radius: 14px;
-    background: var(--panel);
-    border: 1px solid var(--panel-border);
-    backdrop-filter: blur(12px);
-    box-shadow: 0 20px 60px -10px var(--glow);
-    max-width: 100%;
-  }
-  .gate-card .hz { font-family: 'Ma Shan Zheng', serif; font-size: 3.4rem; line-height: 1; color: var(--accent); }
-  .gate-card p { margin: 0; font: 600 1rem 'Cinzel', serif; }
-  .gate-card small { color: var(--muted); font-size: 0.75rem; }
-  .gate-row { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; }
   .live-pill {
     position: absolute;
     left: 50%;
@@ -429,6 +409,22 @@
   .caps { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .caps img { width: 18px; height: 18px; margin-left: -5px; }
   .caps em { font-style: normal; font-size: 0.8rem; color: var(--muted); margin-left: 0.3rem; }
+  .clock {
+    font: 600 1rem ui-monospace, 'Cascadia Mono', Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    padding: 0.1rem 0.5rem;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--bg1) 55%, transparent);
+    color: var(--muted);
+    min-width: 4.2ch;
+    text-align: center;
+    flex: none;
+  }
+  .clock.run { background: var(--accent); color: var(--accent-ink); }
+  .clock.low.run { background: #c0392b; color: #fff; }
+  .idle-tip { margin: 0.2rem 0 0; text-align: center; font-size: 0.85rem; color: var(--muted); }
+  .link { all: unset; cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  .link:focus-visible { outline: 2px solid var(--accent); }
   .controls { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; padding-top: 0.3rem; }
   .controls button { flex: 1 1 auto; }
 
@@ -520,9 +516,6 @@
     .panel { position: static; width: 100%; max-width: 640px; justify-self: center; }
   }
   @media (max-width: 520px) {
-    .gate-card { padding: 0.9rem; gap: 0.45rem; }
-    .gate-card .hz { font-size: 2.4rem; }
-    .gate-card p { font-size: 0.85rem; }
     header { padding: 0.6rem 0; }
     .brand p { display: none; }
     .seal { width: 2.1rem; height: 2.1rem; font-size: 1.4rem; }

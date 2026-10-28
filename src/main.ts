@@ -13,3 +13,6 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 }
 
 export default app;
+
+// Handy for poking at the game from the console while developing.
+if (import.meta.env.DEV) import('./lib/game.svelte').then(({ game }) => Object.assign(window, { game }));

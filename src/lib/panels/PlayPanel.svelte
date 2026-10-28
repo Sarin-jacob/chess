@@ -25,6 +25,20 @@
     }
   });
 
+  const CLOCKS: { id: string; label: string; clock: { base: number; inc: number } | null }[] = [
+    { id: 'none', label: 'Untimed', clock: null },
+    { id: '1+0', label: '1 min', clock: { base: 1, inc: 0 } },
+    { id: '3+2', label: '3 + 2', clock: { base: 3, inc: 2 } },
+    { id: '5+0', label: '5 min', clock: { base: 5, inc: 0 } },
+    { id: '10+5', label: '10 + 5', clock: { base: 10, inc: 5 } },
+    { id: '15+10', label: '15 + 10', clock: { base: 15, inc: 10 } },
+    { id: '30+0', label: '30 min', clock: { base: 30, inc: 0 } },
+  ];
+  const clockId = $derived(settings.rules.clock ? `${settings.rules.clock.base}+${settings.rules.clock.inc}` : 'none');
+  function setClock(id: string) {
+    settings.rules.clock = CLOCKS.find((c) => c.id === id)?.clock ?? null;
+  }
+
   const inviteLink = $derived(invite ? `${location.origin}${location.pathname}#join=${invite}` : '');
   const qrSvg = $derived.by(() => {
     if (!inviteLink) return '';
@@ -108,6 +122,26 @@
     </label>
   {/if}
 
+  {#if !(mode === 'lan' && lanRole === 'join')}
+    <fieldset class="rules">
+      <legend>Rules</legend>
+      <label class="clock">
+        <span>Clock</span>
+        <select value={clockId} onchange={(e) => setClock(e.currentTarget.value)}>
+          {#each CLOCKS as c}<option value={c.id}>{c.label}</option>{/each}
+        </select>
+      </label>
+      {#if mode !== 'lan'}
+        <label class="check"><input type="checkbox" bind:checked={settings.rules.hints} /> Allow hints</label>
+        <label class="check"><input type="checkbox" bind:checked={settings.rules.undo} /> Allow takebacks</label>
+      {/if}
+      {#if mode === 'local'}
+        <label class="check"><input type="checkbox" bind:checked={settings.rules.flip} /> Turn the board to whoever moves</label>
+      {/if}
+      {#if mode === 'lan'}<small>Clock is shared with your rival. Hints and takebacks are off in LAN duels.</small>{/if}
+    </fieldset>
+  {/if}
+
   {#if mode !== 'lan'}
     <button class="primary" onclick={start}>Begin match</button>
   {:else}
@@ -184,6 +218,29 @@
     resize: vertical;
     word-break: break-all;
   }
+  .rules {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0.6rem 0.75rem 0.7rem;
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    font-size: 0.88rem;
+  }
+  .rules legend { padding: 0 0.3rem; font: 600 0.78rem 'Cinzel', serif; color: var(--muted); letter-spacing: 0.08em; }
+  .rules .clock { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+  .rules select {
+    background: color-mix(in srgb, var(--bg1) 60%, transparent);
+    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 0.3rem 0.5rem;
+    font: inherit;
+  }
+  .rules select option { background: var(--bg1); color: var(--ink); }
+  .rules .check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+  .rules input[type='checkbox'] { accent-color: var(--accent); width: 1rem; height: 1rem; }
+  .rules small { color: var(--muted); font-size: 0.76rem; }
   .row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
   .row button { flex: 1; }
   ol { margin: 0; padding-left: 1.2rem; font-size: 0.88rem; }

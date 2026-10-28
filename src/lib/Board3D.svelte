@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { Move } from 'chess.js';
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { PIECES } from './pieces';
   import type { Realm } from './realms';
   import { settings } from './settings.svelte';
-  import { ChessScene } from './three/scene3d';
+  import { ChessScene, VIEWS } from './three/scene3d';
 
   type Color = 'w' | 'b';
   interface Props {
@@ -16,14 +16,15 @@
     hint?: { from: string; to: string } | null;
     coords?: boolean;
     realm: Realm;
-    weather?: boolean;
     status?: string;
+    /** Extra heads-up info (names, clocks) shown in full view. */
+    hud?: Snippet;
     legalFrom: (square: string) => Move[];
     onmove: (from: string, to: string, promotion?: string) => boolean;
     onflip?: () => void;
   }
 
-  let { fen, orientation, movable, lastMove, check, hint = null, coords = true, realm, weather = true, status = '', legalFrom, onmove, onflip }: Props = $props();
+  let { fen, orientation, movable, lastMove, check, hint = null, coords = true, realm, status = '', hud, legalFrom, onmove, onflip }: Props = $props();
 
   let host: HTMLDivElement;
   let scene = $state<ChessScene | null>(null);
@@ -84,6 +85,7 @@
     const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     try {
       const s = new ChessScene(host, { reduceMotion, onPick: (sq) => pick(sq), pickable: (sq) => own(sq) || dests.some((m) => m.to === sq) });
+      s.setView(settings.view3dAngle);
       s.setOrientation(orientation, true);
       scene = s;
     } catch (e) {
@@ -104,7 +106,12 @@
   $effect(() => scene?.setPosition(fen, lastMove));
   $effect(() => scene?.setOrientation(orientation));
   $effect(() => scene?.setCoords(coords));
-  $effect(() => scene?.setWeather(weather));
+  $effect(() => scene?.setView(settings.view3dAngle));
+  const viewLabel = $derived(VIEWS.find((v) => v.id === settings.view3dAngle)?.label ?? 'Player');
+  function nextView() {
+    const i = VIEWS.findIndex((v) => v.id === settings.view3dAngle);
+    settings.view3dAngle = VIEWS[(i + 1) % VIEWS.length].id;
+  }
   $effect(() => {
     scene?.setMarks({
       selected,
@@ -116,6 +123,10 @@
   });
 
   function onkey(e: KeyboardEvent) {
+    if (e.key === 'v' && !(e.target as HTMLElement).closest('input, textarea, select')) {
+      nextView();
+      return;
+    }
     if (e.key === 'Escape' && (promo || full)) {
       if (promo) choosePromotion(null);
       else full = false;
@@ -137,16 +148,17 @@
       <button onclick={() => (settings.view3d = false)}>Back to the 2D board</button>
     </div>
   {:else}
+    {#if full && hud}<div class="hud">{@render hud()}</div>{/if}
     <div class="tools">
+      {#if full && status}<span class="status">{status}</span>{/if}
+      <button onclick={nextView} title="Camera angle: {viewLabel} (V)">◩ {viewLabel}</button>
       {#if full}
-        {#if status}<span class="status">{status}</span>{/if}
         {#if onflip}<button onclick={onflip} title="Turn the board around (F)">⇅ Flip</button>{/if}
         <button onclick={() => (full = false)} title="Leave full view (Esc)">✕ Exit</button>
       {:else}
-        <button onclick={() => (full = true)} title="Fill the screen with the realm" aria-label="Immersive full view">⛶</button>
+        <button onclick={() => (full = true)} title="Fill the screen" aria-label="Full view">⛶</button>
       {/if}
     </div>
-    <p class="help">Drag to orbit · pinch or scroll to zoom · tap a piece, then a square</p>
   {/if}
 
   {#if promo}
@@ -171,8 +183,7 @@
     aspect-ratio: 1;
     border-radius: 6px;
     overflow: hidden;
-    background: var(--bg1);
-    box-shadow: 0 0 0 1px var(--panel-border), 0 18px 60px -10px rgba(0, 0, 0, 0.6), 0 0 80px -20px var(--glow);
+    background: transparent;
     user-select: none;
     -webkit-user-select: none;
   }
@@ -184,6 +195,16 @@
     aspect-ratio: auto;
     border-radius: 0;
     z-index: 30;
+    background: radial-gradient(ellipse at 50% 35%, var(--bg3), var(--bg2) 45%, var(--bg1));
+  }
+  .hud {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    display: grid;
+    gap: 0.3rem;
+    max-width: 45%;
   }
   .host { position: absolute; inset: 0; touch-action: none; }
   .tools {
@@ -205,20 +226,6 @@
     border-radius: 8px;
   }
   .status { font-weight: 600; }
-  .help {
-    position: absolute;
-    left: 50%;
-    bottom: 6px;
-    transform: translateX(-50%);
-    margin: 0;
-    font-size: 0.68rem;
-    color: var(--ink);
-    opacity: 0.7;
-    white-space: nowrap;
-    pointer-events: none;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-  }
-  .full .help { bottom: max(10px, env(safe-area-inset-bottom)); }
   .fail { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 0.6rem; padding: 1rem; text-align: center; }
   .promo-veil { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); z-index: 5; }
   .promo {
@@ -242,8 +249,4 @@
     cursor: pointer;
   }
   .promo button:hover, .promo button:focus-visible { background-color: var(--hl); }
-  @media (max-width: 520px) {
-    .help { display: none; }
-    .full .help { display: block; font-size: 0.62rem; }
-  }
 </style>

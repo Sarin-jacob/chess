@@ -1,4 +1,5 @@
 // Per-device preferences, kept in localStorage.
+import type { Rules } from './db';
 
 export interface SettingsData {
   realm: string; // 'random' or a realm id
@@ -8,10 +9,12 @@ export interface SettingsData {
   coords: boolean;
   level: number;
   name: string;
-  autoFlip: boolean;
   useStun: boolean;
+  /** Rules picked for the next match. */
+  rules: Rules;
   /** Immersive three.js board instead of the flat one. */
   view3d: boolean;
+  view3dAngle: 'player' | 'top' | 'low';
 }
 
 const KEY = 'frost-chess:settings';
@@ -23,9 +26,11 @@ const DEFAULTS: SettingsData = {
   coords: true,
   level: 3,
   name: 'Wanderer',
-  autoFlip: false,
   useStun: true,
+  // Turning the board each move suits a phone passed across a table, not a desktop screen.
+  rules: { hints: true, undo: true, clock: null, flip: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches },
   view3d: false,
+  view3dAngle: 'player',
 };
 
 function load(): SettingsData {

@@ -3,6 +3,19 @@
 export type Mode = 'ai' | 'local' | 'lan';
 export type Result = '1-0' | '0-1' | '1/2-1/2' | '*';
 
+/** Match options chosen before the game starts. */
+export interface Rules {
+  hints: boolean;
+  undo: boolean;
+  /** Minutes per side and seconds added per move; null = untimed. */
+  clock: { base: number; inc: number } | null;
+  /** Same device only: turn the board to face whoever is to move. */
+  flip: boolean;
+}
+
+/** Milliseconds left on each side's clock. */
+export type Clocks = { w: number; b: number };
+
 export interface GameRecord {
   id: string;
   mode: Mode;
@@ -19,6 +32,8 @@ export interface GameRecord {
   reason?: string;
   startedAt: number;
   updatedAt: number;
+  rules?: Rules;
+  clock?: Clocks;
 }
 
 const DB_NAME = 'frost-chess';

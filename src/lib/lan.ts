@@ -3,10 +3,13 @@
 // answers with a reply code. Both are compressed SDP blobs with ICE candidates
 // already gathered, so no signalling server is needed on the local network.
 
+import type { Clocks, Rules } from './db';
+
 export type LanMessage =
-  | { t: 'hello'; v: 1; name: string; hostColor: 'w' | 'b'; realm: string; pgn: string; gameId: string }
+  | { t: 'hello'; v: 1; name: string; hostColor: 'w' | 'b'; realm: string; pgn: string; gameId: string; rules?: Rules; clock?: Clocks }
   | { t: 'hi'; name: string }
-  | { t: 'move'; uci: string; ply: number }
+  | { t: 'move'; uci: string; ply: number; clock?: Clocks }
+  | { t: 'flag'; color: 'w' | 'b' }
   | { t: 'resign' }
   | { t: 'draw'; action: 'offer' | 'accept' | 'decline' }
   | { t: 'rematch'; action: 'offer' | 'accept' }
