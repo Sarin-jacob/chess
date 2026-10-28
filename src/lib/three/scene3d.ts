@@ -8,8 +8,8 @@ import {
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Realm } from '../realms';
-import { lookFor, pieceMaterial, texture } from './look3d';
-import { buildPieceGeometries } from './pieces3d';
+import { lookFor, outlineMaterial, pieceMaterial, texture } from './look3d';
+import { buildPieceGeometries, type PieceGeometry } from './pieces3d';
 
 type Color2 = 'w' | 'b';
 const FILES = 'abcdefgh';
@@ -102,16 +102,19 @@ export class ChessScene {
   private destGroup = new Group();
   private pieceGroup = new Group();
   private coordGroup = new Group();
-  private geos: Record<string, BufferGeometry>;
+  private geos: Record<string, PieceGeometry>;
   private pieceMats: Record<Color2, MeshPhysicalMaterial> = { w: new MeshPhysicalMaterial(), b: new MeshPhysicalMaterial() };
-  private selMats: Record<Color2, MeshPhysicalMaterial> = { w: new MeshPhysicalMaterial(), b: new MeshPhysicalMaterial() };
+  private trimMats: Record<Color2, MeshPhysicalMaterial> = { w: new MeshPhysicalMaterial(), b: new MeshPhysicalMaterial() };
+  private outlineMats: Record<Color2, MeshBasicMaterial> = { w: new MeshBasicMaterial(), b: new MeshBasicMaterial() };
+  /** The selected piece's outline glows in the realm's accent instead. */
+  private selOutline = outlineMaterial('#ffffff', 0.035);
   private dotGeo = new CircleGeometry(0.15, 24);
   private ringGeo = new RingGeometry(0.38, 0.47, 32);
   private destMat = new MeshBasicMaterial({ transparent: true, opacity: 0.7, depthWrite: false });
 
   private fen = '';
   private marks: Marks = { selected: null, dests: [], lastMove: null, check: null, hint: null };
-  private hops: { mesh: Mesh; from: Vector3; to: Vector3; t0: number; dur: number }[] = [];
+  private hops: { mesh: Object3D; from: Vector3; to: Vector3; t0: number; dur: number }[] = [];
   private orientation: Color2 = 'w';
   private view: View = 'player';
   private pose: Pose = { az: 0, ...VIEW_POSE.player };
@@ -237,15 +240,17 @@ export class ChessScene {
 
     for (const c of ['w', 'b'] as Color2[]) {
       this.pieceMats[c].dispose();
-      this.selMats[c].dispose();
+      this.trimMats[c].dispose();
+      this.outlineMats[c].dispose();
       this.pieceMats[c] = pieceMaterial(look[c]);
-      const sel = pieceMaterial(look[c]);
-      // Selected pieces glow in the realm's accent.
-      sel.emissive = css(realm.vars['--accent']).color;
-      sel.emissiveIntensity = 0.35;
-      sel.emissiveMap = null;
-      this.selMats[c] = sel;
+      this.trimMats[c] = pieceMaterial(look.trim[c]);
+      this.outlineMats[c] = outlineMaterial(look.outline[c], c === 'w' ? 0.016 : 0.012);
     }
+    this.selOutline.color.copy(css(realm.vars['--accent']).color);
+    // Rebuild the pieces so they pick up the new materials.
+    const fen = this.fen;
+    this.fen = '';
+    if (fen) this.setPosition(fen + ' w', null, true);
 
     const b = look.board;
     for (const [k, v] of [['light', '--light'], ['dark', '--dark']] as const) {
@@ -283,15 +288,24 @@ export class ChessScene {
     this.goTo(v);
   }
 
-  setPosition(fen: string, lastMove: { from: string; to: string } | null) {
+  setPosition(fen: string, lastMove: { from: string; to: string } | null, still = false) {
     const board = fen.split(' ')[0];
     if (board === this.fen) return;
-    const first = !this.fen;
+    const first = !this.fen || still;
     this.fen = board;
     this.hops = [];
     this.pieceGroup.clear();
     for (const [sq, code] of parseFen(fen)) {
-      const m = new Mesh(this.geos[code[1]], this.pieceMats[code[0] as Color2]);
+      const col = code[0] as Color2;
+      const geo = this.geos[code[1]];
+      const m = new Group();
+      const body = new Mesh(geo.body, this.pieceMats[col]);
+      const trim = new Mesh(geo.trim, this.trimMats[col]);
+      const outline = new Mesh(geo.body, this.outlineMats[col]);
+      body.castShadow = trim.castShadow = true;
+      body.receiveShadow = trim.receiveShadow = true;
+      outline.userData.outline = true;
+      m.add(body, trim, outline);
       const p = sqPos(sq);
       m.position.set(p.x, 0, p.z);
       // Knights show their profile, facing the centre files and turned a little toward the enemy.
@@ -303,8 +317,6 @@ export class ChessScene {
         // A fixed twist per square so grain and veins don't all line up.
         m.rotation.y = (FILES.indexOf(sq[0]) * 1.7 + +sq[1] * 0.9) % (Math.PI * 2);
       }
-      m.castShadow = true;
-      m.receiveShadow = true;
       m.userData.sq = sq;
       m.userData.color = code[0];
       this.pieceGroup.add(m);
@@ -312,7 +324,7 @@ export class ChessScene {
     if (!first && lastMove && !this.opts.reduceMotion) {
       const now = this.clock.getElapsedTime();
       const hop = (from: string, to: string) => {
-        const mesh = this.pieceGroup.children.find((c) => c.userData.sq === to) as Mesh | undefined;
+        const mesh = this.pieceGroup.children.find((c) => c.userData.sq === to);
         if (!mesh) return;
         const a = sqPos(from), b = sqPos(to);
         const dist = Math.hypot(a.x - b.x, a.z - b.z);
@@ -347,8 +359,9 @@ export class ChessScene {
       const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
       for (const mat of mats) mat.dispose();
     });
-    for (const c of ['w', 'b'] as Color2[]) this.selMats[c].dispose();
-    Object.values(this.geos).forEach((g) => g.dispose());
+    for (const c of ['w', 'b'] as Color2[]) [this.pieceMats[c], this.trimMats[c], this.outlineMats[c]].forEach((m) => m.dispose());
+    this.selOutline.dispose();
+    Object.values(this.geos).forEach((g) => { g.body.dispose(); g.trim.dispose(); });
     this.envMap.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
@@ -385,11 +398,11 @@ export class ChessScene {
       m.renderOrder = 2;
       this.destGroup.add(m);
     }
-    for (const c of this.pieceGroup.children) {
-      const m = c as Mesh;
+    for (const m of this.pieceGroup.children) {
       const col = m.userData.color as Color2;
       const sel = m.userData.sq === selected;
-      m.material = sel ? this.selMats[col] : this.pieceMats[col];
+      const outline = m.children.find((c) => c.userData.outline) as Mesh | undefined;
+      if (outline) outline.material = sel ? this.selOutline : this.outlineMats[col];
       if (!this.hops.some((h) => h.mesh === m)) m.position.y = sel ? 0.14 : 0;
     }
   }
@@ -460,8 +473,9 @@ export class ChessScene {
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     this.ray.setFromCamera(this.ndc, this.camera);
-    const hit = this.ray.intersectObjects(this.pieceGroup.children, false)[0] ?? this.ray.intersectObjects(this.squares, false)[0];
-    return (hit?.object.userData.sq as string | undefined) ?? null;
+    const hit = this.ray.intersectObjects(this.pieceGroup.children, true)[0] ?? this.ray.intersectObjects(this.squares, false)[0];
+    const obj = hit?.object;
+    return ((obj?.userData.sq ?? obj?.parent?.userData.sq) as string | undefined) ?? null;
   }
 
   // Tap a piece then a square, or press on a piece and release over its destination.

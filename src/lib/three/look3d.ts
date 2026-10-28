@@ -1,5 +1,5 @@
 // What each realm's 3D set is carved from: piece materials, board finish and lighting.
-import { CanvasTexture, Color, MeshPhysicalMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from 'three';
+import { BackSide, CanvasTexture, Color, MeshBasicMaterial, MeshPhysicalMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from 'three';
 
 type Tex = 'grain' | 'veins' | 'marble' | 'speckle';
 
@@ -24,6 +24,10 @@ interface Finish {
 export interface Look {
   w: Finish;
   b: Finish;
+  /** Collars, mitre cut, crown beads, cross, eyes: a contrasting inlay per side. */
+  trim: { w: Finish; b: Finish };
+  /** Silhouette line around each side's pieces, so they stand out from the squares. */
+  outline: { w: string; b: string };
   board: { roughness: number; clearcoat?: number; tex?: Tex };
   frame: string;
   hemi: [string, string, number];
@@ -33,90 +37,106 @@ export interface Look {
   exposure: number;
 }
 
+const gold = (glow = 0): Finish => ({ color: '#d9a646', roughness: 0.35, metalness: 1, ...(glow ? { emissive: '#7a4a10', emissiveIntensity: glow } : {}) });
+
 export const LOOKS: Record<string, Look> = {
-  // Clear ice against deep glacier blue.
+  // Frosted ice against deep glacier blue, inlaid with silver.
   frost: {
-    w: { color: '#c4e2f7', roughness: 0.08, transmission: 0.55, thickness: 1.1, ior: 1.31, attenuation: '#7fb8e3', clearcoat: 1 },
-    b: { color: '#3d79b4', roughness: 0.1, transmission: 0.55, thickness: 1.2, ior: 1.31, attenuation: '#123a66', clearcoat: 1 },
-    board: { roughness: 0.18, clearcoat: 0.8 },
+    w: { color: '#c4e2f7', roughness: 0.22, transmission: 0.5, thickness: 1.1, ior: 1.31, attenuation: '#7fb8e3', clearcoat: 0.4 },
+    b: { color: '#2f6aa6', roughness: 0.25, transmission: 0.35, thickness: 1.2, ior: 1.31, attenuation: '#123a66', clearcoat: 0.4 },
+    trim: { w: { color: '#4f86b8', roughness: 0.35, metalness: 0.6 }, b: { color: '#e6f3ff', roughness: 0.3, metalness: 0.8 } },
+    outline: { w: '#264a6b', b: '#d8efff' },
+    board: { roughness: 0.55, clearcoat: 0.1 },
     frame: '#2c4b66',
-    hemi: ['#e2f2ff', '#3c5a75', 1.1],
-    key: ['#ffffff', 2.6],
-    rim: ['#9fe0ff', 1.6],
-    env: 0.9,
+    hemi: ['#e2f2ff', '#3c5a75', 0.8],
+    key: ['#ffffff', 2.8],
+    rim: ['#9fe0ff', 1.4],
+    env: 0.55,
     exposure: 1.0,
   },
-  // Maple and walnut, oiled.
+  // Maple and walnut, oiled; each inlaid with the other wood.
   autumn: {
-    w: { color: '#e8b97c', roughness: 0.55, clearcoat: 0.35, tex: 'grain' },
-    b: { color: '#5b2c14', roughness: 0.5, clearcoat: 0.4, tex: 'grain' },
-    board: { roughness: 0.55, clearcoat: 0.3, tex: 'grain' },
+    w: { color: '#e8b97c', roughness: 0.6, clearcoat: 0.15, tex: 'grain' },
+    b: { color: '#5b2c14', roughness: 0.55, clearcoat: 0.2, tex: 'grain' },
+    trim: { w: { color: '#4a220e', roughness: 0.5 }, b: { color: '#e9b06a', roughness: 0.45, metalness: 0.4 } },
+    outline: { w: '#3a1a0a', b: '#e8a15a' },
+    board: { roughness: 0.65, clearcoat: 0.1, tex: 'grain' },
     frame: '#3d1d0e',
-    hemi: ['#ffd2a0', '#3a1a0a', 1.0],
-    key: ['#ffc58a', 2.8],
+    hemi: ['#ffd2a0', '#3a1a0a', 0.75],
+    key: ['#ffc58a', 3.0],
     rim: ['#f08a3c', 1.4],
-    env: 0.55,
+    env: 0.4,
     exposure: 1.05,
   },
   // Temple gold against basalt split by molten seams.
   volcano: {
-    w: { color: '#e2a94a', roughness: 0.26, metalness: 1 },
-    b: { color: '#1d1512', roughness: 0.75, glow: 'veins', emissive: '#ff5a14', emissiveIntensity: 2.4 },
-    board: { roughness: 0.7, tex: 'speckle' },
+    w: { color: '#e2a94a', roughness: 0.38, metalness: 1 },
+    b: { color: '#1d1512', roughness: 0.85, glow: 'veins', emissive: '#ff5a14', emissiveIntensity: 2.4 },
+    trim: { w: { color: '#3a120a', roughness: 0.7 }, b: { color: '#ff7a2a', roughness: 0.6, emissive: '#ff5a14', emissiveIntensity: 1.6 } },
+    outline: { w: '#2a0c05', b: '#ff6a1a' },
+    board: { roughness: 0.8, tex: 'speckle' },
     frame: '#1c0b07',
-    hemi: ['#ff9a6a', '#200604', 0.8],
-    key: ['#ffb27a', 2.2],
-    rim: ['#ff5a14', 2.4],
-    env: 0.7,
+    hemi: ['#ff9a6a', '#200604', 0.65],
+    key: ['#ffb27a', 2.4],
+    rim: ['#ff5a14', 2.2],
+    env: 0.45,
     exposure: 1.1,
   },
-  // Glazed porcelain and red lacquer.
+  // Blue-and-white porcelain and red lacquer with gold leaf.
   spring: {
-    w: { color: '#f8f5ee', roughness: 0.18, clearcoat: 1, tex: 'marble' },
-    b: { color: '#8f1f22', roughness: 0.22, clearcoat: 1 },
-    board: { roughness: 0.4, clearcoat: 0.4 },
+    w: { color: '#f8f5ee', roughness: 0.32, clearcoat: 0.4, tex: 'marble' },
+    b: { color: '#8f1f22', roughness: 0.38, clearcoat: 0.4 },
+    trim: { w: { color: '#2b4fa3', roughness: 0.3, clearcoat: 0.5 }, b: gold() },
+    outline: { w: '#2b3f73', b: '#3a0a0c' },
+    board: { roughness: 0.6, clearcoat: 0.05 },
     frame: '#5e3f26',
-    hemi: ['#f2f9ff', '#6c8a5a', 1.2],
-    key: ['#fff4e0', 2.6],
-    rim: ['#ffd1e0', 1.2],
-    env: 0.9,
+    hemi: ['#f2f9ff', '#6c8a5a', 0.85],
+    key: ['#fff4e0', 2.8],
+    rim: ['#ffd1e0', 1.1],
+    env: 0.5,
     exposure: 1.0,
   },
-  // Translucent jade and sea-worn bronze.
+  // Translucent jade bound in gold, and sea-worn bronze with jade inlay.
   rain: {
-    w: { color: '#a8e6c4', roughness: 0.16, transmission: 0.55, thickness: 1.4, ior: 1.6, attenuation: '#2f8a5e', clearcoat: 0.8 },
-    b: { color: '#3c6b58', roughness: 0.42, metalness: 0.75 },
-    board: { roughness: 0.35, clearcoat: 0.6, tex: 'marble' },
+    w: { color: '#a8e6c4', roughness: 0.3, transmission: 0.45, thickness: 1.4, ior: 1.6, attenuation: '#2f8a5e', clearcoat: 0.3 },
+    b: { color: '#2f5a4a', roughness: 0.55, metalness: 0.65 },
+    trim: { w: gold(), b: { color: '#7fe0b0', roughness: 0.4, emissive: '#2fbf86', emissiveIntensity: 0.25 } },
+    outline: { w: '#0d3b2c', b: '#9ff0cc' },
+    board: { roughness: 0.6, clearcoat: 0.05, tex: 'marble' },
     frame: '#0b332c',
-    hemi: ['#9fffe6', '#02140f', 1.0],
-    key: ['#c8fff0', 2.2],
-    rim: ['#5af0c8', 1.6],
-    env: 0.8,
+    hemi: ['#9fffe6', '#02140f', 0.75],
+    key: ['#c8fff0', 2.4],
+    rim: ['#5af0c8', 1.5],
+    env: 0.5,
     exposure: 1.1,
   },
-  // Moon-silver and obsidian with a spirit's glow.
+  // Brushed moon-silver and matte obsidian, both veined with a spirit's violet.
   night: {
-    w: { color: '#ddd8f2', roughness: 0.22, metalness: 0.9, emissive: '#6a4cff', emissiveIntensity: 0.06 },
-    b: { color: '#120a1e', roughness: 0.05, metalness: 0.15, clearcoat: 1, emissive: '#6b35c9', emissiveIntensity: 0.22 },
-    board: { roughness: 0.2, clearcoat: 1 },
+    w: { color: '#d4cfe8', roughness: 0.5, metalness: 0.6 },
+    b: { color: '#1a1026', roughness: 0.55, metalness: 0.1, clearcoat: 0.15, emissive: '#6b35c9', emissiveIntensity: 0.08 },
+    trim: { w: { color: '#7b52e8', roughness: 0.45, emissive: '#5b2fd0', emissiveIntensity: 0.5 }, b: { color: '#b48cff', roughness: 0.4, emissive: '#8a55ff', emissiveIntensity: 0.9 } },
+    outline: { w: '#1b1030', b: '#9a72ff' },
+    board: { roughness: 0.6, clearcoat: 0.05 },
     frame: '#120a1e',
-    hemi: ['#8a6cff', '#05030a', 0.8],
-    key: ['#c8b8ff', 2.0],
-    rim: ['#b57bff', 2.2],
-    env: 0.8,
+    hemi: ['#8a6cff', '#05030a', 0.7],
+    key: ['#d8ccff', 2.4],
+    rim: ['#b57bff', 1.8],
+    env: 0.45,
     exposure: 1.2,
   },
-  // Rose salt crystal and sun-dark sandstone.
+  // Rose salt crystal and sun-dark sandstone, trimmed in each other's tone.
   day: {
-    w: { color: '#f1d6cb', roughness: 0.45, sheen: '#ffffff', tex: 'speckle' },
-    b: { color: '#5e4029', roughness: 0.6, tex: 'speckle' },
-    board: { roughness: 0.65, tex: 'speckle' },
+    w: { color: '#e2a48c', roughness: 0.5, sheen: '#fff0e8', tex: 'speckle' },
+    b: { color: '#5e4029', roughness: 0.65, tex: 'speckle' },
+    trim: { w: { color: '#7a3f2a', roughness: 0.5 }, b: { color: '#f2e2c4', roughness: 0.5 } },
+    outline: { w: '#5a2e1e', b: '#f4e6cc' },
+    board: { roughness: 0.75, tex: 'speckle' },
     frame: '#7d6c55',
-    hemi: ['#ffffff', '#cfc4ae', 1.2],
+    hemi: ['#ffffff', '#cfc4ae', 0.8],
     key: ['#fffaf0', 3.0],
-    rim: ['#ffe9c0', 1.0],
-    env: 0.8,
-    exposure: 0.95,
+    rim: ['#ffe9c0', 0.9],
+    env: 0.45,
+    exposure: 0.85,
   },
 };
 
@@ -238,5 +258,18 @@ export function pieceMaterial(f: Finish): MeshPhysicalMaterial {
   }
   if (f.tex) m.map = texture(f.tex);
   if (f.glow) m.emissiveMap = texture(f.glow);
+  return m;
+}
+
+/**
+ * Inverted-hull outline: the mesh is drawn again, pushed out along its normals and seen only
+ * from behind, which leaves a clean line around the silhouette.
+ */
+export function outlineMaterial(color: string, thickness: number): MeshBasicMaterial {
+  const m = new MeshBasicMaterial({ color, side: BackSide });
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `vec3 transformed = position + normal * ${thickness.toFixed(4)};`);
+  };
+  m.customProgramCacheKey = () => `outline-${thickness}`;
   return m;
 }
