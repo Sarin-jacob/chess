@@ -28,7 +28,7 @@
 - **Three ways to play**
   - **Vs the Sect** — built-in engine in a Web Worker, eight ranks from *Outer Disciple* to *Martial Sovereign*.
   - **Same device** — pass-and-play; the board can turn to face whoever moves (on by default on phones, off on desktop).
-  - **LAN duel** — two browsers talk directly over WebRTC. No server, no account: share an invite (QR / link / code), paste back the reply, play. Draw offers, resignation and rematches (colours swap, new realm) included.
+  - **LAN duel** — two browsers talk directly over WebRTC. No server, no account: share an invite (QR / link / code) and get the reply back by scanning its QR, clicking the reply link, or pasting it. Rivals you've met before join with just the link, with no reply at all. Draw offers, resignation and rematches (colours swap, new realm) included.
 - **House rules and clocks.** Before a match pick a time control (untimed, bullet to 30 min, with increments) and whether hints and takebacks are allowed. Clocks are synced in LAN duels; in LAN each player always sits at the bottom of their own board.
 - **Optional 3D board.** Each realm carves its own set — ice and glacier glass, maple and walnut, temple gold and lava-veined basalt, porcelain and red lacquer, jade and bronze, moon-silver and obsidian, rose salt and sandstone — with fixed Player / Overhead / Low camera angles (`v` to switch) and a full-screen view.
 - **Your archive, in your browser.** Every game is saved to IndexedDB as you play: resume unfinished matches, review any game move by move, see your win/loss record and which realms you've conquered, import/export PGN.
@@ -56,7 +56,8 @@ src/
   lib/Scenery.svelte    sky, mountains and canvas weather per realm
   lib/game.svelte.ts    game state, rules and clocks, AI turns, persistence, LAN protocol
   lib/engine.worker.ts  alpha-beta engine (runs off the main thread)
-  lib/lan.ts            WebRTC data channel + compressed manual signalling
+  lib/lan.ts            WebRTC data channel, compressed manual signalling, remembered rivals
+  lib/QrScanner.svelte  camera QR reader (BarcodeDetector, falling back to jsQR)
   lib/db.ts             IndexedDB archive
   lib/realms.ts         realm palettes, particles and glossary
 ```
@@ -69,6 +70,18 @@ Work happens on `dev`. Merging a good release into `main` triggers CI, which typ
 
 Both devices should be on the same network. With no internet, browsers connect using local candidates only; the
 optional public STUN helper (Settings) can help when local discovery is blocked. Invite codes are single-use.
+
+Getting the reply back to the host:
+
+- **Phone host:** tap *Scan reply* and point the camera at the guest's reply QR.
+- **Computer host:** open the guest's reply link in the same browser. The new tab hands the reply to the tab
+  holding the invite and closes itself. *Paste reply* reads the clipboard in one click, and once Chrome has
+  clipboard permission, switching back to the tab with a copied reply connects by itself.
+
+**Remembered rivals.** Each device keeps one long-lived WebRTC certificate in IndexedDB. After a duel the host
+knows the rival's certificate fingerprint, so a later invite can carry the ICE login the guest must use. The host
+writes the guest's answer in advance, and the guest only has to open the link. If the guest's browser data was
+cleared, or the link reaches a different device, the guest is told to ask for a regular invite.
 
 ## Roadmap
 

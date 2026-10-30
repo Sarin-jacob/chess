@@ -2,7 +2,7 @@ import { Chess, type Move, type Square } from 'chess.js';
 import { saveGame, type Clocks, type GameRecord, type Mode, type Result, type Rules } from './db';
 import { bestMove, cancelEngine, LEVEL_NAMES } from './engine';
 import { play, type Fx } from './fx';
-import { LanLink, type LanMessage, type LinkState } from './lan';
+import { forgetRival as forgetSavedRival, LanLink, rememberRival, rivals as savedRivals, type LanMessage, type LinkState, type Rival } from './lan';
 import { randomName } from './names';
 import { applyRealm, randomRealm, realmById, type Realm } from './realms';
 import { settings } from './settings.svelte';
@@ -57,6 +57,12 @@ class Game {
   opponent = $state('');
   drawOffer = $state<'none' | 'sent' | 'received'>('none');
   rematchOffer = $state<'none' | 'sent' | 'received'>('none');
+  /** Rivals this device has duelled before; they can join with a single link. */
+  rivals = $state<Rival[]>(savedRivals());
+  /** The open invite is for a remembered rival, so no reply code is coming. */
+  quickInvite = $state(false);
+  /** Reply links opened in another tab of this browser are handed over on this channel. */
+  private replies = typeof BroadcastChannel === 'function' ? new BroadcastChannel('frost-chess-lan') : null;
 
   turn = $derived<Color>(this.fen.split(' ')[1] as Color);
   over = $derived(this.result !== '*');
@@ -64,6 +70,15 @@ class Game {
 
   constructor() {
     setInterval(() => this.tick(), 100);
+    if (this.replies) {
+      this.replies.onmessage = async (e) => {
+        if (!e.data?.reply || !this.awaitingReply) return;
+        try {
+          await this.acceptReply(e.data.reply);
+          this.replies!.postMessage({ ack: e.data.id });
+        } catch { /* meant for another tab's invite */ }
+      };
+    }
   }
 
   // ---------- setup ----------
@@ -443,9 +458,10 @@ class Game {
 
   // ---------- LAN ----------
 
-  private makeLink() {
+  private async makeLink() {
     this.link?.close();
-    const link = new LanLink(settings.useStun);
+    this.quickInvite = false;
+    const link = await LanLink.create(settings.useStun);
     link.onState = (s) => {
       this.linkState = s;
       if (s === 'open' && this.isHost) this.sendHello();
@@ -456,22 +472,60 @@ class Game {
     return link;
   }
 
-  async hostLan(color: Color | 'random'): Promise<string> {
+  /** Host a duel. With a remembered rival, the invite needs no reply code. */
+  async hostLan(color: Color | 'random', rival?: Rival): Promise<string> {
     this.isHost = true;
     this.opponent = '';
     const resolved = color === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : color;
     this.newGame({ mode: 'lan', color: resolved, rules: { ...settings.rules, flip: false } });
-    return this.makeLink().host();
+    const link = await this.makeLink();
+    const code = await link.host(rival?.fp);
+    this.quickInvite = link.quick;
+    return code;
   }
 
-  acceptReply(code: string) {
-    return this.link!.accept(code);
+  /** Waiting on a reply code for an ordinary invite. */
+  get awaitingReply() {
+    return this.isHost && this.linkState === 'waiting' && !this.quickInvite;
   }
 
-  async joinLan(invite: string): Promise<string> {
+  async acceptReply(code: string) {
+    if (!this.link) throw new Error('Create an invite first.');
+    await this.link.accept(code);
+  }
+
+  /** Join from an invite. Returns the reply code to send back, or null if the host doesn't need one. */
+  async joinLan(invite: string): Promise<string | null> {
     this.isHost = false;
     this.opponent = '';
-    return this.makeLink().join(invite);
+    return (await this.makeLink()).join(invite);
+  }
+
+  /** Hand a reply link opened in this tab to the tab that made the invite. True if one took it. */
+  passReply(reply: string): Promise<boolean> {
+    if (this.awaitingReply) return this.acceptReply(reply).then(() => true, () => false);
+    const ch = this.replies;
+    if (!ch) return Promise.resolve(false);
+    const id = Math.random().toString(36).slice(2);
+    return new Promise((resolve) => {
+      const done = (ok: boolean) => { ch.removeEventListener('message', onAck); resolve(ok); };
+      const onAck = (e: MessageEvent) => { if (e.data?.ack === id) done(true); };
+      ch.addEventListener('message', onAck);
+      ch.postMessage({ reply, id });
+      setTimeout(() => done(false), 1500);
+    });
+  }
+
+  private noteRival(name: string) {
+    const fp = this.link?.remoteFingerprint;
+    if (!fp) return;
+    rememberRival(fp, name);
+    this.rivals = savedRivals();
+  }
+
+  forgetRival(fp: string) {
+    forgetSavedRival(fp);
+    this.rivals = savedRivals();
   }
 
   leaveLan() {
@@ -501,6 +555,7 @@ class Game {
         this.orientation = this.you;
         this.opponent = m.name;
         this.dedupeName(m.name, m.auto);
+        this.noteRival(m.name);
         this.startedAt = Date.now();
         this.result = '*';
         this.reason = '';
@@ -519,6 +574,7 @@ class Game {
       case 'hi':
         this.opponent = m.name;
         this.dedupeName(m.name, m.auto);
+        this.noteRival(m.name);
         this.writeHeaders();
         this.persist();
         break;

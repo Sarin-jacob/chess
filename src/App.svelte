@@ -39,14 +39,33 @@
 
   let intro = $state<{ key: number; name: string; hanzi: string; meaning: string; season: string } | null>(null);
 
-  /** Pick up an invite link (#join=…), including one opened in an already-open tab. */
+  let replyNote = $state('');
+
+  /** Pick up an invite link (#join=…) or a reply link (#reply=…), including in an already-open tab. */
   function readInvite() {
     const m = location.hash.match(/#join=(.+)$/);
     if (m) {
       joinCode = m[1];
       tab = 'play';
     }
-    return !!m;
+    const r = location.hash.match(/#reply=(.+)$/);
+    if (r) {
+      history.replaceState(null, '', location.pathname);
+      deliverReply(r[1]);
+    }
+    return !!(m || r);
+  }
+
+  /** A reply link belongs to the tab that made the invite; pass it there. */
+  async function deliverReply(code: string) {
+    tab = 'play';
+    const here = game.awaitingReply;
+    const ok = await game.passReply(code);
+    if (here && ok) return;
+    replyNote = ok
+      ? 'Reply delivered. Your duel is connecting in the other tab, so you can close this one.'
+      : 'No open invite took this reply. Open it in the browser where you created the invite, while that invite is still waiting.';
+    if (ok) window.close(); // only works for tabs a script opened; otherwise the note stays
   }
 
   onMount(async () => {
@@ -224,6 +243,9 @@
       </div>
       {@render bar(bottom)}
 
+      {#if replyNote}
+        <p class="reply-note" role="status">{replyNote} <button class="link" onclick={() => (replyNote = '')}>Dismiss</button></p>
+      {/if}
       {#if ready && !game.active}
         <p class="idle-tip">
           No duel underway — the board is yours to admire.
@@ -425,6 +447,14 @@
   .clock.run { background: var(--accent); color: var(--accent-ink); }
   .clock.low.run { background: #c0392b; color: #fff; }
   .idle-tip { margin: 0.2rem 0 0; text-align: center; font-size: 0.85rem; color: var(--muted); }
+  .reply-note {
+    margin: 0.2rem 0 0;
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    text-align: center;
+    font-size: 0.85rem;
+  }
   .link { all: unset; cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
   .link:focus-visible { outline: 2px solid var(--accent); }
   .controls { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; padding-top: 0.3rem; }

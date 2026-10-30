@@ -3,6 +3,8 @@
   import type { Mode } from '../db';
   import { LEVEL_NAMES } from '../engine';
   import { game } from '../game.svelte';
+  import { decodeSignal, isReply, type Rival } from '../lan';
+  import QrScanner from '../QrScanner.svelte';
   import { settings } from '../settings.svelte';
 
   let { joinCode = '' }: { joinCode?: string } = $props();
@@ -16,12 +18,19 @@
   let busy = $state(false);
   let error = $state('');
   let copied = $state('');
+  /** Guest has opened an invite (the reply may be empty for a one-step invite). */
+  let joined = $state(false);
+  let scanning = $state<'' | 'reply' | 'invite'>('');
+  /** Name of the remembered rival the open invite was made for. */
+  let quickFor = $state('');
 
   $effect(() => {
     if (joinCode) {
       mode = 'lan';
       lanRole = 'join';
       input = joinCode;
+      joined = false;
+      reply = '';
     }
   });
 
@@ -39,18 +48,23 @@
     settings.rules.clock = CLOCKS.find((c) => c.id === id)?.clock ?? null;
   }
 
-  const inviteLink = $derived(invite ? `${location.origin}${location.pathname}#join=${invite}` : '');
-  const qrSvg = $derived.by(() => {
-    if (!inviteLink) return '';
+  const here = `${location.origin}${location.pathname}`;
+  const inviteLink = $derived(invite ? `${here}#join=${invite}` : '');
+  const replyLink = $derived(reply ? `${here}#reply=${reply}` : '');
+
+  function qrOf(text: string) {
+    if (!text) return '';
     try {
       const qr = qrcode(0, 'L');
-      qr.addData(inviteLink);
+      qr.addData(text);
       qr.make();
       return qr.createSvgTag({ cellSize: 3, margin: 3, scalable: true });
     } catch {
       return ''; // too long for a QR code
     }
-  });
+  }
+  const qrSvg = $derived(qrOf(inviteLink));
+  const replyQr = $derived(qrOf(replyLink));
 
   function start() {
     game.leaveLan();
@@ -70,9 +84,72 @@
     }
   }
 
-  const host = () => run(async () => { reply = ''; invite = await game.hostLan(color); });
-  const connect = () => run(async () => { await game.acceptReply(input); input = ''; });
-  const join = () => run(async () => { reply = await game.joinLan(input); history.replaceState(null, '', location.pathname); });
+  const host = (rival?: Rival) => run(async () => {
+    reply = '';
+    scanning = '';
+    quickFor = rival?.name ?? '';
+    invite = await game.hostLan(color, rival);
+  });
+  const connect = (code = input) => run(async () => { await game.acceptReply(code); input = ''; scanning = ''; });
+  const join = (code = input) => run(async () => {
+    reply = (await game.joinLan(code)) ?? '';
+    joined = true;
+    scanning = '';
+    history.replaceState(null, '', location.pathname);
+  });
+  function leave() {
+    game.leaveLan();
+    invite = '';
+    reply = '';
+    joined = false;
+  }
+
+  async function pasteReply() {
+    error = '';
+    try {
+      const text = await navigator.clipboard.readText();
+      if (await isReply(text)) connect(text);
+      else error = "The clipboard doesn't hold a reply code yet.";
+    } catch {
+      error = 'Clipboard blocked. Paste into the box below instead.';
+    }
+  }
+
+  // Once clipboard access is granted (Chrome remembers it), coming back to this tab with a
+  // copied reply connects straight away.
+  $effect(() => {
+    if (!game.awaitingReply) return;
+    let tried = '';
+    const check = async () => {
+      try {
+        const perm = await navigator.permissions.query({ name: 'clipboard-read' as PermissionName });
+        if (perm.state !== 'granted') return;
+        const text = await navigator.clipboard.readText();
+        if (text === tried || !(await isReply(text))) return;
+        tried = text;
+        await game.acceptReply(text);
+      } catch { /* not supported, not focused, or a stale reply */ }
+    };
+    check();
+    addEventListener('focus', check);
+    return () => removeEventListener('focus', check);
+  });
+
+  async function scannedReply(text: string) {
+    if (!(await isReply(text))) return false;
+    await connect(text);
+    return true;
+  }
+
+  async function scannedInvite(text: string) {
+    try {
+      if ((await decodeSignal(text)).desc.type !== 'offer') return false;
+    } catch {
+      return false;
+    }
+    await join(text);
+    return true;
+  }
 
   async function copy(text: string, what: string) {
     try {
@@ -84,8 +161,8 @@
     }
   }
 
-  async function share() {
-    try { await navigator.share({ title: 'Chess duel invite', url: inviteLink }); } catch { /* cancelled */ }
+  async function share(title: string, url: string) {
+    try { await navigator.share({ title, url }); } catch { /* cancelled */ }
   }
 
   const stateText: Record<string, string> = {
@@ -156,36 +233,79 @@
 
     {#if lanRole === 'host'}
       {#if !invite || game.linkState === 'closed' || game.linkState === 'failed'}
-        <button class="primary" disabled={busy} onclick={host}>Create invite</button>
+        <button class="primary" disabled={busy} onclick={() => host()}>Create invite</button>
+        {#if game.rivals.length}
+          <div class="rivals">
+            <small>Rivals you've duelled join with just the link, with no reply:</small>
+            {#each game.rivals as r (r.fp)}
+              <div class="rival">
+                <button disabled={busy} onclick={() => host(r)}>Invite {r.name}</button>
+                <button class="x" title="Forget {r.name}" aria-label="Forget {r.name}" onclick={() => game.forgetRival(r.fp)}>✕</button>
+              </div>
+            {/each}
+          </div>
+        {/if}
       {:else if game.linkState !== 'open'}
         <ol>
-          <li>Send this invite to the other device — scan the QR, open the link, or paste the code.</li>
+          <li>
+            {#if game.quickInvite}
+              Send this to <b>{quickFor}</b>. Once they open it, you're connected, with no reply needed.
+            {:else}
+              Send this invite to the other device: scan the QR, open the link, or paste the code.
+            {/if}
+          </li>
         </ol>
         {#if qrSvg}<div class="qr">{@html qrSvg}</div>{/if}
         <div class="row">
           <button onclick={() => copy(inviteLink, 'link')}>{copied === 'link' ? 'Copied!' : 'Copy link'}</button>
           <button onclick={() => copy(invite, 'code')}>{copied === 'code' ? 'Copied!' : 'Copy code'}</button>
-          {#if 'share' in navigator}<button onclick={share}>Share</button>{/if}
+          {#if 'share' in navigator}<button onclick={() => share('Chess duel invite', inviteLink)}>Share</button>{/if}
         </div>
-        <ol start="2"><li>Paste their reply code here:</li></ol>
-        <textarea bind:value={input} rows="3" placeholder="Reply code"></textarea>
-        <button class="primary" disabled={busy || !input.trim()} onclick={connect}>Connect</button>
+        {#if game.quickInvite}
+          <button disabled={busy} onclick={() => host()}>Use a regular invite instead</button>
+        {:else}
+          <ol start="2"><li>Get their reply: scan it, open their reply link in this browser, or paste it.</li></ol>
+          {#if scanning === 'reply'}
+            <QrScanner onresult={scannedReply} oncancel={() => (scanning = '')} />
+          {:else}
+            <div class="row">
+              <button onclick={() => (scanning = 'reply')}>📷 Scan reply</button>
+              <button onclick={pasteReply}>📋 Paste reply</button>
+            </div>
+          {/if}
+          <textarea bind:value={input} rows="2" placeholder="…or paste the reply code here"></textarea>
+          <button class="primary" disabled={busy || !input.trim()} onclick={() => connect()}>Connect</button>
+        {/if}
       {:else}
-        <button onclick={() => { game.leaveLan(); invite = ''; }}>Leave duel</button>
+        <button onclick={leave}>Leave duel</button>
       {/if}
     {:else}
-      {#if !reply}
-        <textarea bind:value={input} rows="3" placeholder="Paste invite code or link"></textarea>
-        <button class="primary" disabled={busy || !input.trim()} onclick={join}>Join</button>
+      {#if !joined || game.linkState === 'closed' || game.linkState === 'failed'}
+        {#if scanning === 'invite'}
+          <QrScanner onresult={scannedInvite} oncancel={() => (scanning = '')} />
+        {:else}
+          <textarea bind:value={input} rows="3" placeholder="Paste invite code or link"></textarea>
+          <div class="row">
+            <button class="primary" disabled={busy || !input.trim()} onclick={() => join()}>Join</button>
+            <button onclick={() => (scanning = 'invite')}>📷 Scan invite</button>
+          </div>
+        {/if}
       {:else if game.linkState !== 'open'}
-        <p>Send this reply code back to the host:</p>
-        <textarea readonly rows="3" value={reply} onfocus={(e) => e.currentTarget.select()}></textarea>
-        <div class="row">
-          <button onclick={() => copy(reply, 'reply')}>{copied === 'reply' ? 'Copied!' : 'Copy reply'}</button>
-          <button onclick={() => { game.leaveLan(); reply = ''; }}>Cancel</button>
-        </div>
+        {#if reply}
+          <p>Send this reply back to the host:</p>
+          {#if replyQr}<div class="qr big">{@html replyQr}</div>{/if}
+          <small class="hint">Host on a phone? They tap <b>Scan reply</b> and point it here. On a computer, send the link; they just click it.</small>
+          <div class="row">
+            <button onclick={() => copy(replyLink, 'reply-link')}>{copied === 'reply-link' ? 'Copied!' : 'Copy link'}</button>
+            <button onclick={() => copy(reply, 'reply')}>{copied === 'reply' ? 'Copied!' : 'Copy code'}</button>
+            {#if 'share' in navigator}<button onclick={() => share('Chess duel reply', replyLink)}>Share</button>{/if}
+          </div>
+        {:else}
+          <p>This invite was made for this device, so no reply is needed.</p>
+        {/if}
+        <button onclick={leave}>Cancel</button>
       {:else}
-        <button onclick={() => { game.leaveLan(); reply = ''; }}>Leave duel</button>
+        <button onclick={leave}>Leave duel</button>
       {/if}
     {/if}
 
@@ -195,7 +315,8 @@
       <p>
         The two browsers talk directly over WebRTC — no server, no account. Both devices should be on the same network.
         Codes are single-use; create a new invite if a connection drops. If devices can't find each other, try
-        enabling the public STUN helper in Settings.
+        enabling the public STUN helper in Settings. After your first duel, each device remembers the other, so
+        next time the host can invite you by name and the link alone connects you.
       </p>
     </details>
   {/if}
@@ -245,6 +366,13 @@
   .row button { flex: 1; }
   ol { margin: 0; padding-left: 1.2rem; font-size: 0.88rem; }
   .qr { background: #fff; border-radius: 8px; padding: 4px; width: min(220px, 70%); justify-self: center; }
+  .qr.big { width: min(300px, 92%); }
+  .hint { color: var(--muted); font-size: 0.78rem; }
+  .rivals { display: grid; gap: 0.35rem; }
+  .rivals small { color: var(--muted); font-size: 0.78rem; }
+  .rival { display: flex; gap: 0.35rem; }
+  .rival button:first-child { flex: 1; }
+  .rival .x { padding-inline: 0.6rem; }
   .qr :global(svg) { display: block; width: 100%; height: auto; }
   .status { margin: 0; font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
   .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
