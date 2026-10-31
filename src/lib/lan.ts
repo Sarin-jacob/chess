@@ -112,18 +112,152 @@ function randomToken(n: number) {
   return Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => abc[b % abc.length]).join('');
 }
 
+// ---------- Codes ----------
+//
+// A data-channel connection only needs a handful of facts from each side: ICE login,
+// certificate fingerprint, DTLS role and the candidate addresses. Packing just those
+// into bytes keeps codes around 150 characters, so their QR codes stay easy to scan.
+// The full SDP is rebuilt on arrival. Anything unusual still travels as compressed SDP.
+
+/** What a session description boils down to for a data-channel-only connection. */
+interface Essentials {
+  type: 'offer' | 'answer';
+  setup: string;
+  ufrag: string;
+  pwd: string;
+  mid: string;
+  /** SHA-256 certificate fingerprint, 32 bytes. */
+  fp: Uint8Array;
+  cands: { addr: string; port: number; type: string; prio: number }[];
+}
+
+const SETUPS = ['actpass', 'active', 'passive'];
+const TYPES = ['host', 'srflx', 'prflx', 'relay'];
+
+const hexBytes = (hex: string) => Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16));
+const bytesHex = (u: Uint8Array, sep = '') => Array.from(u, (b) => b.toString(16).padStart(2, '0').toUpperCase()).join(sep);
+
+function essentials(desc: RTCSessionDescriptionInit): Essentials | null {
+  const sdp = desc.sdp ?? '';
+  const get = (k: string) => sdp.match(new RegExp(`a=${k}:(\\S+)`))?.[1];
+  const fp = sdp.match(/a=fingerprint:sha-256 ((?:[0-9A-F]{2}:){31}[0-9A-F]{2})/i)?.[1];
+  const ufrag = get('ice-ufrag');
+  const pwd = get('ice-pwd');
+  const setup = get('setup') ?? 'actpass';
+  if (!fp || !ufrag || !pwd || !SETUPS.includes(setup) || (sdp.match(/^m=/gm)?.length ?? 0) !== 1) return null;
+  const cands = [...sdp.matchAll(/a=candidate:\S+ 1 udp (\d+) (\S+) (\d+) typ (\w+)/gi)]
+    .map(([, prio, addr, port, type]) => ({ addr, port: +port, type: type.toLowerCase(), prio: +prio }))
+    .filter((c) => TYPES.includes(c.type))
+    .slice(0, 12);
+  return { type: desc.type as Essentials['type'], setup, ufrag, pwd, mid: get('mid') ?? '0', fp: hexBytes(fp.replace(/:/g, '')), cands };
+}
+
+function buildSdp(e: Essentials) {
+  const lines = [
+    'v=0', `o=- ${Date.now()} 2 IN IP4 127.0.0.1`, 's=-', 't=0 0', `a=group:BUNDLE ${e.mid}`, 'a=msid-semantic: WMS',
+    'm=application 9 UDP/DTLS/SCTP webrtc-datachannel', 'c=IN IP4 0.0.0.0',
+  ];
+  e.cands.forEach((c, i) =>
+    lines.push(`a=candidate:${i + 1} 1 udp ${c.prio} ${c.addr} ${c.port} typ ${c.type}${c.type === 'host' ? '' : ' raddr 0.0.0.0 rport 0'}`),
+  );
+  lines.push(
+    `a=ice-ufrag:${e.ufrag}`, `a=ice-pwd:${e.pwd}`, 'a=ice-options:trickle', `a=fingerprint:sha-256 ${bytesHex(e.fp, ':')}`,
+    `a=setup:${e.setup}`, `a=mid:${e.mid}`, 'a=sctp-port:5000', 'a=max-message-size:262144', '',
+  );
+  return lines.join('\r\n');
+}
+
 /** The answer a returning rival's browser will produce, written ahead of time by the host. */
 function predictedAnswer(offer: string, q: QuickJoin, fp: string) {
   const mid = offer.match(/a=mid:(\S+)/)?.[1] ?? '0';
-  return [
-    'v=0', `o=- ${Date.now()} 2 IN IP4 127.0.0.1`, 's=-', 't=0 0', `a=group:BUNDLE ${mid}`, 'a=msid-semantic: WMS',
-    'm=application 9 UDP/DTLS/SCTP webrtc-datachannel', 'c=IN IP4 0.0.0.0',
-    `a=ice-ufrag:${q.ufrag}`, `a=ice-pwd:${q.pwd}`, 'a=ice-options:trickle', `a=fingerprint:${fp}`, 'a=setup:active',
-    `a=mid:${mid}`, 'a=sctp-port:5000', 'a=max-message-size:262144', '',
-  ].join('\r\n');
+  return buildSdp({ type: 'answer', setup: 'active', ufrag: q.ufrag, pwd: q.pwd, mid, fp: hexBytes(fp.replace(/^\S+ /, '').replace(/:/g, '')), cands: [] });
 }
 
-// ---------- Codes ----------
+class Writer {
+  bytes: number[] = [];
+  u8(n: number) { this.bytes.push(n & 255); }
+  u16(n: number) { this.u8(n >> 8); this.u8(n); }
+  u32(n: number) { this.u16(Math.floor(n / 65536)); this.u16(n % 65536); }
+  raw(u: ArrayLike<number>) { for (let i = 0; i < u.length; i++) this.u8(u[i]); }
+  str(s: string) {
+    const b = new TextEncoder().encode(s);
+    if (b.length > 255) throw new Error('too long');
+    this.u8(b.length);
+    this.raw(b);
+  }
+}
+
+class Reader {
+  i = 0;
+  constructor(private u: Uint8Array) {}
+  u8() {
+    if (this.i >= this.u.length) throw new Error('Code is cut short.');
+    return this.u[this.i++];
+  }
+  u16() { return this.u8() * 256 + this.u8(); }
+  u32() { return this.u16() * 65536 + this.u16(); }
+  raw(n: number) { return Uint8Array.from({ length: n }, () => this.u8()); }
+  str() { return new TextDecoder().decode(this.raw(this.u8())); }
+}
+
+const UUID_LOCAL = /^([0-9a-f]{8})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{12})\.local$/i;
+const IPV4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
+
+function pack(e: Essentials, extra: { quick?: QuickJoin; to?: string }) {
+  const w = new Writer();
+  w.u8((e.type === 'answer' ? 1 : 0) | (extra.quick ? 2 : 0) | (extra.to ? 4 : 0));
+  w.u8(SETUPS.indexOf(e.setup));
+  w.str(e.ufrag);
+  w.str(e.pwd);
+  w.str(e.mid);
+  w.raw(e.fp);
+  if (extra.quick) {
+    w.str(extra.quick.ufrag);
+    w.str(extra.quick.pwd);
+    w.raw(hexBytes(extra.quick.fp));
+  }
+  if (extra.to) w.str(extra.to);
+  w.u8(e.cands.length);
+  for (const c of e.cands) {
+    const uuid = c.addr.match(UUID_LOCAL);
+    const v4 = c.addr.match(IPV4);
+    w.u8((TYPES.indexOf(c.type) << 2) | (uuid ? 0 : v4 ? 1 : 2));
+    if (uuid) w.raw(hexBytes(uuid.slice(1).join('')));
+    else if (v4) w.raw(v4.slice(1).map(Number));
+    else w.str(c.addr);
+    w.u16(c.port);
+    w.u32(c.prio);
+  }
+  return Uint8Array.from(w.bytes);
+}
+
+function unpack(u: Uint8Array): Signal {
+  const r = new Reader(u);
+  const flags = r.u8();
+  const e: Essentials = {
+    type: flags & 1 ? 'answer' : 'offer',
+    setup: SETUPS[r.u8()] ?? 'actpass',
+    ufrag: r.str(),
+    pwd: r.str(),
+    mid: r.str(),
+    fp: r.raw(32),
+    cands: [],
+  };
+  const quick = flags & 2 ? { ufrag: r.str(), pwd: r.str(), fp: bytesHex(r.raw(8)) } : undefined;
+  const to = flags & 4 ? r.str() : undefined;
+  for (let n = r.u8(); n > 0; n--) {
+    const k = r.u8();
+    const kind = k & 3;
+    let addr: string;
+    if (kind === 0) {
+      const h = bytesHex(r.raw(16)).toLowerCase();
+      addr = `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}.local`;
+    } else if (kind === 1) addr = Array.from(r.raw(4)).join('.');
+    else addr = r.str();
+    e.cands.push({ addr, type: TYPES[k >> 2] ?? 'host', port: r.u16(), prio: r.u32() });
+  }
+  return { desc: { type: e.type, sdp: buildSdp(e) }, quick, to };
+}
 
 async function pipe(data: Uint8Array, stream: CompressionStream | DecompressionStream) {
   const out = new Blob([data as BlobPart]).stream().pipeThrough(stream);
@@ -133,13 +267,21 @@ async function pipe(data: Uint8Array, stream: CompressionStream | DecompressionS
 const b64url = (u: Uint8Array) => btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 
+/** Compact codes start with "2."; older ones are deflated JSON holding the whole SDP. */
+const COMPACT = '2.';
+
 export async function encodeSignal(desc: RTCSessionDescriptionInit, extra: { quick?: QuickJoin; to?: string } = {}): Promise<string> {
+  const e = essentials(desc);
+  if (e) {
+    try { return COMPACT + b64url(pack(e, extra)); } catch { /* fall back to the full SDP */ }
+  }
   const json = new TextEncoder().encode(JSON.stringify({ t: desc.type, s: desc.sdp, q: extra.quick, o: extra.to }));
   return b64url(await pipe(json, new CompressionStream('deflate-raw')));
 }
 
 export async function decodeSignal(code: string): Promise<Signal> {
   const clean = code.trim().replace(/^.*#(join|reply)=/, '').replace(/\s+/g, '');
+  if (clean.startsWith(COMPACT)) return unpack(unb64url(clean.slice(COMPACT.length)));
   const raw = await pipe(unb64url(clean), new DecompressionStream('deflate-raw'));
   const { t, s, q, o } = JSON.parse(new TextDecoder().decode(raw));
   return { desc: { type: t, sdp: s }, quick: q, to: o };

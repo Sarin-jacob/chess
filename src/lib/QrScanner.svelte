@@ -4,13 +4,15 @@
   import { onDestroy, onMount } from 'svelte';
 
   let { onresult, oncancel }: {
-    /** Called with each code seen; return true to stop scanning. */
-    onresult: (text: string) => boolean | Promise<boolean>;
+    /** Called with each code seen: true stops scanning, a string is shown as a hint (wrong QR). */
+    onresult: (text: string) => boolean | string | Promise<boolean | string>;
     oncancel: () => void;
   } = $props();
 
   let video = $state<HTMLVideoElement>();
   let error = $state('');
+  let hint = $state('');
+  let hintTimer = 0;
   let stream: MediaStream | null = null;
   let timer = 0;
   let stopped = false;
@@ -27,7 +29,7 @@
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     return async (v) => {
-      const scale = Math.min(1, 640 / v.videoWidth);
+      const scale = Math.min(1, 1024 / v.videoWidth);
       canvas.width = Math.round(v.videoWidth * scale);
       canvas.height = Math.round(v.videoHeight * scale);
       ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
@@ -39,14 +41,20 @@
   function stop() {
     stopped = true;
     clearTimeout(timer);
+    clearTimeout(hintTimer);
     stream?.getTracks().forEach((t) => t.stop());
     stream = null;
   }
 
   onMount(async () => {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      // Without size hints phones hand over 640x480, too coarse for a dense QR code.
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
       if (stopped) return stop();
+      stream.getVideoTracks()[0]?.applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => {});
       const v = video!;
       v.srcObject = stream;
       await v.play();
@@ -55,7 +63,13 @@
         if (stopped) return;
         if (v.readyState >= 2 && v.videoWidth) {
           const text = await read(v).catch(() => null);
-          if (text && (await onresult(text))) return stop();
+          const res = text ? await onresult(text) : false;
+          if (res === true) return stop();
+          if (typeof res === 'string') {
+            hint = res;
+            clearTimeout(hintTimer);
+            hintTimer = window.setTimeout(() => (hint = ''), 2500);
+          }
         }
         timer = window.setTimeout(loop, 200);
       };
@@ -79,6 +93,7 @@
       <video bind:this={video} playsinline muted></video>
       <span class="frame" aria-hidden="true"></span>
     </div>
+    <small class="tip" class:warn={!!hint}>{hint || 'Hold the QR code inside the square, about a hand-span away.'}</small>
   {/if}
   <button onclick={() => { stop(); oncancel(); }}>Stop scanning</button>
 </div>
@@ -100,4 +115,6 @@
     pointer-events: none;
   }
   .error { color: #f87171; margin: 0; font-size: 0.85rem; }
+  .tip { color: var(--muted); font-size: 0.78rem; text-align: center; }
+  .tip.warn { color: #fbbf24; }
 </style>

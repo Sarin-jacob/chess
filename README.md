@@ -28,7 +28,7 @@
 - **Three ways to play**
   - **Vs the Sect** — built-in engine in a Web Worker, eight ranks from *Outer Disciple* to *Martial Sovereign*.
   - **Same device** — pass-and-play; the board can turn to face whoever moves (on by default on phones, off on desktop).
-  - **LAN duel** — two browsers talk directly over WebRTC. No server, no account: share an invite (QR / link / code) and get the reply back by scanning its QR, clicking the reply link, or pasting it. Rivals you've met before join with just the link, with no reply at all. Draw offers, resignation and rematches (colours swap, new realm) included.
+  - **LAN duel** — two browsers talk directly over WebRTC. No server, no account: share an invite (QR / link / code, about 140 characters) and get the reply back by scanning its QR, clicking the reply link, or pasting it. Rivals you've met before join with just the link, with no reply at all. Draw offers, resignation and rematches (colours swap, new realm) included.
 - **House rules and clocks.** Before a match pick a time control (untimed, bullet to 30 min, with increments) and whether hints and takebacks are allowed. Clocks are synced in LAN duels; in LAN each player always sits at the bottom of their own board.
 - **Optional 3D board.** Each realm carves its own set — ice and glacier glass, maple and walnut, temple gold and lava-veined basalt, porcelain and red lacquer, jade and bronze, moon-silver and obsidian, rose salt and sandstone — with fixed Player / Overhead / Low camera angles (`v` to switch) and a full-screen view.
 - **Your archive, in your browser.** Every game is saved to IndexedDB as you play: resume unfinished matches, review any game move by move, see your win/loss record and which realms you've conquered, import/export PGN.

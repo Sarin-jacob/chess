@@ -55,7 +55,7 @@
   function qrOf(text: string) {
     if (!text) return '';
     try {
-      const qr = qrcode(0, 'L');
+      const qr = qrcode(0, 'M'); // codes are short now, so spend the room on error correction
       qr.addData(text);
       qr.make();
       return qr.createSvgTag({ cellSize: 3, margin: 3, scalable: true });
@@ -135,18 +135,23 @@
     return () => removeEventListener('focus', check);
   });
 
+  /** What a scanned QR holds: 'offer', 'answer', or null for something else. */
+  async function kindOf(text: string) {
+    try { return (await decodeSignal(text)).desc.type ?? null; } catch { return null; }
+  }
+
   async function scannedReply(text: string) {
-    if (!(await isReply(text))) return false;
+    const kind = await kindOf(text);
+    if (kind === 'offer') return "That's your own invite. Scan the reply on the guest's screen.";
+    if (kind !== 'answer') return "That QR isn't a duel code.";
     await connect(text);
     return true;
   }
 
   async function scannedInvite(text: string) {
-    try {
-      if ((await decodeSignal(text)).desc.type !== 'offer') return false;
-    } catch {
-      return false;
-    }
+    const kind = await kindOf(text);
+    if (kind === 'answer') return "That's a reply code. The host scans it, not the guest.";
+    if (kind !== 'offer') return "That QR isn't a duel code.";
     await join(text);
     return true;
   }
