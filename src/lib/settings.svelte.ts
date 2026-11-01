@@ -8,6 +8,8 @@ export interface SettingsData {
   haptics: boolean;
   particles: boolean;
   coords: boolean;
+  /** Contrasting edge around 2D pieces so they stand out on any square. */
+  outlines: boolean;
   level: number;
   name: string;
   /** True while the name is one we generated rather than one the player typed. */
@@ -27,6 +29,7 @@ const DEFAULTS: SettingsData = {
   haptics: true,
   particles: true,
   coords: true,
+  outlines: true,
   level: 3,
   name: '',
   nameAuto: true,

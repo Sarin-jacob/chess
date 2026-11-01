@@ -11,11 +11,13 @@
     check: string | null;
     hint?: { from: string; to: string } | null;
     coords?: boolean;
+    /** Contrasting edge around pieces, so dark pieces show on dark squares. */
+    outlines?: boolean;
     legalFrom: (square: string) => Move[];
     onmove: (from: string, to: string, promotion?: string) => boolean;
   }
 
-  let { fen, orientation, movable, lastMove, check, hint = null, coords = true, legalFrom, onmove }: Props = $props();
+  let { fen, orientation, movable, lastMove, check, hint = null, coords = true, outlines = true, legalFrom, onmove }: Props = $props();
 
   const FILES = 'abcdefgh';
 
@@ -50,7 +52,7 @@
   let selected = $state<string | null>(null);
   let dests = $state<Move[]>([]);
   let promo = $state<{ from: string; to: string; color: Color } | null>(null);
-  let drag = $state<{ square: string; piece: string; x: number; y: number; moved: boolean; toggle: boolean } | null>(null);
+  let drag = $state<{ square: string; piece: string; x: number; y: number; size: number; moved: boolean; toggle: boolean } | null>(null);
   // Dropped pieces are already in place, so skip the slide animation for them.
   let dropped = false;
   let hover = $state<string | null>(null);
@@ -58,12 +60,46 @@
 
   const isLight = (sq: string) => (FILES.indexOf(sq[0]) + +sq[1]) % 2 === 1;
 
-  // Clear selection whenever the position changes underneath us.
+  // Right-button marks for thinking a line through: click a square to ring it, drag to draw
+  // an arrow, repeat to remove. Shift, Alt or both pick another colour.
+  type Mark = { from: string; to: string; color: string };
+  let marks = $state<Mark[]>([]);
+  let drawing = $state<Mark | null>(null);
+
+  const markColor = (e: PointerEvent) =>
+    e.shiftKey && e.altKey ? '#e8b432' : e.shiftKey ? '#e0453a' : e.altKey ? '#3c8be0' : '#3fae55';
+
+  function toggleMark(m: Mark) {
+    const i = marks.findIndex((k) => k.from === m.from && k.to === m.to);
+    if (i < 0) marks = [...marks, m];
+    else if (marks[i].color === m.color) marks = marks.filter((_, j) => j !== i);
+    else marks = marks.map((k, j) => (j === i ? m : k));
+  }
+
+  /** Centre of a square in board units (the board is 8 x 8). */
+  function centre(sq: string) {
+    const i = squares.indexOf(sq);
+    return { x: (i % 8) + 0.5, y: Math.floor(i / 8) + 0.5 };
+  }
+
+  function arrowPoints(from: string, to: string) {
+    const a = centre(from);
+    const b = centre(to);
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const [ux, uy] = [(b.x - a.x) / len, (b.y - a.y) / len];
+    const at = (d: number, side: number) => `${(a.x + ux * d - uy * side).toFixed(3)},${(a.y + uy * d + ux * side).toFixed(3)}`;
+    const tip = len - 0.08;
+    const neck = tip - 0.42;
+    return [at(0.25, 0.08), at(neck, 0.08), at(neck, 0.24), at(tip, 0), at(neck, -0.24), at(neck, -0.08), at(0.25, -0.08)].join(' ');
+  }
+
+  // Clear selection and marks whenever the position changes underneath us.
   $effect(() => {
     fen;
     selected = null;
     dests = [];
     promo = null;
+    marks = [];
   });
 
   function select(sq: string) {
@@ -100,9 +136,16 @@
   }
 
   function pointerdown(e: PointerEvent) {
-    if (promo || e.button > 0) return;
+    if (promo) return;
     const sq = squareAt(e.clientX, e.clientY);
     if (!sq) return;
+    if (e.button === 2) {
+      drawing = { from: sq, to: sq, color: markColor(e) };
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      return;
+    }
+    if (e.button > 0) return;
+    marks = [];
     if (selected && sq !== selected && dests.some((m) => m.to === sq)) {
       attempt(selected, sq);
       return;
@@ -111,7 +154,7 @@
       // A second click on the same piece deselects it (unless it turns into a drag).
       const toggle = selected === sq;
       select(sq);
-      drag = { square: sq, piece: pieces.get(sq)!, x: e.clientX, y: e.clientY, moved: false, toggle };
+      drag = { square: sq, piece: pieces.get(sq)!, x: e.clientX, y: e.clientY, size: boardEl.clientWidth / 8, moved: false, toggle };
       (e.target as Element).setPointerCapture?.(e.pointerId);
       e.preventDefault();
     } else {
@@ -121,6 +164,11 @@
   }
 
   function pointermove(e: PointerEvent) {
+    if (drawing) {
+      const sq = squareAt(e.clientX, e.clientY);
+      if (sq && sq !== drawing.to) drawing = { ...drawing, to: sq };
+      return;
+    }
     if (!drag) return;
     const moved = drag.moved || Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4;
     drag = { ...drag, x: e.clientX, y: e.clientY, moved };
@@ -128,6 +176,11 @@
   }
 
   function pointerup(e: PointerEvent) {
+    if (drawing) {
+      toggleMark(drawing);
+      drawing = null;
+      return;
+    }
     if (!drag) return;
     const d = drag;
     drag = null;
@@ -179,11 +232,12 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="board"
+  class:outlines
   bind:this={boardEl}
   onpointerdown={pointerdown}
   onpointermove={pointermove}
   onpointerup={pointerup}
-  onpointercancel={() => { drag = null; hover = null; }}
+  onpointercancel={() => { drag = null; hover = null; drawing = null; }}
   oncontextmenu={(e) => e.preventDefault()}
 >
   {#each squares as sq, i (sq)}
@@ -203,7 +257,7 @@
       {#if coords && i >= 56}<span class="file">{sq[0]}</span>{/if}
       {#if piece}
         <div
-          class="piece"
+          class="piece {piece[0]}"
           class:ghost={drag?.moved && drag.square === sq}
           class:grab={movable && piece[0] === movable}
           data-piece-sq={sq}
@@ -213,6 +267,19 @@
       {#if dest}<div class="dot" class:cap={!!piece || dest.isEnPassant()}></div>{/if}
     </div>
   {/each}
+
+  {#if marks.length || drawing}
+    {@const all = drawing ? [...marks, drawing] : marks}
+    <svg class="marks" viewBox="0 0 8 8" aria-hidden="true">
+      {#each all as m, i}
+        {#if m.from === m.to}
+          <circle cx={centre(m.from).x} cy={centre(m.from).y} r="0.45" fill="none" stroke={m.color} stroke-width="0.08" class:live={m === drawing && i === all.length - 1} />
+        {:else}
+          <polygon points={arrowPoints(m.from, m.to)} fill={m.color} class:live={m === drawing && i === all.length - 1} />
+        {/if}
+      {/each}
+    </svg>
+  {/if}
 
   {#if promo}
     {@const col = orientation === 'w' ? FILES.indexOf(promo.to[0]) : 7 - FILES.indexOf(promo.to[0])}
@@ -229,7 +296,15 @@
 </div>
 
 {#if drag?.moved}
-  <div class="drag" style:left="{drag.x}px" style:top="{drag.y}px" style:background-image="url({PIECES[drag.piece]})"></div>
+  <div
+    class="drag {drag.piece[0]}"
+    class:outlines
+    style:left="{drag.x}px"
+    style:top="{drag.y}px"
+    style:width="{drag.size}px"
+    style:--rim="{Math.max(1, drag.size * 0.02).toFixed(2)}px"
+    style:background-image="url({PIECES[drag.piece]})"
+  ></div>
 {/if}
 
 <style>
@@ -245,6 +320,9 @@
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    container-type: inline-size;
+    /* Outline width: about 2% of a square. */
+    --rim: max(1px, 0.25cqi);
     box-shadow:
       0 0 0 1px var(--panel-border),
       0 0 0 6px color-mix(in srgb, var(--dark) 55%, transparent),
@@ -289,23 +367,52 @@
     filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
     will-change: transform;
   }
+  /* Four hard shadows, one per side, trace an outline that follows the piece's shape:
+     a pale edge for dark pieces, a soft dark edge for light ones. */
+  .outlines .piece.b,
+  .drag.outlines.b {
+    --rim-c: color-mix(in srgb, var(--light) 45%, white);
+    filter: drop-shadow(var(--rim) 0 0 var(--rim-c)) drop-shadow(calc(-1 * var(--rim)) 0 0 var(--rim-c))
+      drop-shadow(0 var(--rim) 0 var(--rim-c)) drop-shadow(0 calc(-1 * var(--rim)) 0 var(--rim-c))
+      drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
+  }
+  .outlines .piece.w,
+  .drag.outlines.w {
+    --rim-c: rgb(0 0 0 / 0.4);
+    filter: drop-shadow(var(--rim) 0 0 var(--rim-c)) drop-shadow(calc(-1 * var(--rim)) 0 0 var(--rim-c))
+      drop-shadow(0 var(--rim) 0 var(--rim-c)) drop-shadow(0 calc(-1 * var(--rim)) 0 var(--rim-c))
+      drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
+  }
   .piece.grab { cursor: grab; }
   .piece.ghost { opacity: 0.3; }
+  /* A dark dot with a pale rim reads on light and dark squares alike, in every realm. */
   .dot {
     position: absolute;
-    inset: 36%;
+    inset: 35%;
     border-radius: 50%;
-    background: color-mix(in srgb, var(--accent-ink) 30%, transparent);
+    background: rgb(0 0 0 / 0.3);
+    box-shadow: 0 0 0 2px rgb(255 255 255 / 0.4);
     z-index: 3;
     pointer-events: none;
   }
   .dot.cap {
     inset: 0;
-    background: radial-gradient(circle, transparent 62%, color-mix(in srgb, var(--accent-ink) 32%, transparent) 64%);
+    border-radius: 0;
+    box-shadow: none;
+    background: radial-gradient(circle, transparent 58%, rgb(255 255 255 / 0.45) 59%, rgb(255 255 255 / 0.45) 62%, rgb(0 0 0 / 0.32) 63%);
   }
+  .marks {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 4;
+    pointer-events: none;
+    opacity: 0.82;
+  }
+  .marks .live { opacity: 0.6; }
   .drag {
     position: fixed;
-    width: min(13vmin, 92px);
     aspect-ratio: 1;
     transform: translate(-50%, -55%) scale(1.15);
     background-size: 100%;

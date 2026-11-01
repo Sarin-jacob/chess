@@ -182,7 +182,7 @@
           <span class="pname">{nameFor(c)}</span>
           {#if game.thinking && game.turn === c}<span class="think">meditating<i>.</i><i>.</i><i>.</i></span>{/if}
           <span class="caps">
-            {#each caps as p}<img src={PIECES[(c === 'w' ? 'b' : 'w') + p]} alt={p} />{/each}
+            {#each caps as p}<img src={PIECES[(c === 'w' ? 'b' : 'w') + p]} alt={p} class:rim={settings.outlines && c === 'w'} />{/each}
             {#if adv > 0}<em>+{adv}</em>{/if}
           </span>
           {#if game.active && game.rules.clock}
@@ -233,6 +233,7 @@
           check={game.inCheckSquare()}
           hint={game.hint}
           coords={settings.coords}
+          outlines={settings.outlines}
           legalFrom={(sq) => game.legalFrom(sq)}
           onmove={(f, t, p) => game.tryMove(f, t, p)}
         />
@@ -432,6 +433,7 @@
   .think i:nth-child(3) { animation-delay: 0.4s; }
   .caps { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .caps img { width: 18px; height: 18px; margin-left: -5px; }
+  .caps img.rim { filter: drop-shadow(0 0 0.6px rgb(255 255 255 / 0.9)) drop-shadow(0 0 0.6px rgb(255 255 255 / 0.9)); }
   .caps em { font-style: normal; font-size: 0.8rem; color: var(--muted); margin-left: 0.3rem; }
   .clock {
     font: 600 1rem ui-monospace, 'Cascadia Mono', Menlo, monospace;

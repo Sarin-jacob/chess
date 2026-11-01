@@ -32,7 +32,7 @@
 - **House rules and clocks.** Before a match pick a time control (untimed, bullet to 30 min, with increments) and whether hints and takebacks are allowed. Clocks are synced in LAN duels; in LAN each player always sits at the bottom of their own board.
 - **Optional 3D board.** Each realm carves its own set — ice and glacier glass, maple and walnut, temple gold and lava-veined basalt, porcelain and red lacquer, jade and bronze, moon-silver and obsidian, rose salt and sandstone — with fixed Player / Overhead / Low camera angles (`v` to switch) and a full-screen view.
 - **Your archive, in your browser.** Every game is saved to IndexedDB as you play: resume unfinished matches, review any game move by move, see your win/loss record and which realms you've conquered, import/export PGN.
-- **Feels good to play.** Tap-to-move or drag-and-drop, legal-move hints, promotion picker, synthesized wood-knock and temple-bell sounds, haptics on supported phones, keyboard review (← → ↑ ↓, `f` to flip).
+- **Feels good to play.** Tap-to-move or drag-and-drop, legal-move hints, promotion picker, piece outlines that keep dark pieces visible on dark squares, right-click arrows and circles for planning (Shift/Alt change colour), synthesized wood-knock and temple-bell sounds, haptics on supported phones, keyboard review (← → ↑ ↓, `f` to flip).
 - **Installable & offline.** PWA manifest + service worker; once loaded it works without a network.
 - **Works in Firefox and Chromium** (desktop and mobile).
 
@@ -50,7 +50,7 @@ Stack: [Svelte 5](https://svelte.dev) + TypeScript + [Vite](https://vite.dev), [
 ```
 src/
   App.svelte            layout, player bars, start gate, result dialog
-  lib/Board.svelte      board UI (pointer/touch, drag, promotion, animation)
+  lib/Board.svelte      board UI (pointer/touch, drag, promotion, animation, arrows)
   lib/Board3D.svelte    3D board (three.js, loaded only when switched on)
   lib/three/            3D scene, piece geometry and per-realm materials
   lib/Scenery.svelte    sky, mountains and canvas weather per realm
