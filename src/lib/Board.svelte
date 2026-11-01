@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Move } from 'chess.js';
-  import { PIECES } from './pieces';
+  import { pieceImages } from './pieceSets';
 
   type Color = 'w' | 'b';
   interface Props {
@@ -13,13 +13,16 @@
     coords?: boolean;
     /** Contrasting edge around pieces, so dark pieces show on dark squares. */
     outlines?: boolean;
+    /** Piece set id, see pieceSets.ts. */
+    pieceSet?: string;
     legalFrom: (square: string) => Move[];
     onmove: (from: string, to: string, promotion?: string) => boolean;
   }
 
-  let { fen, orientation, movable, lastMove, check, hint = null, coords = true, outlines = true, legalFrom, onmove }: Props = $props();
+  let { fen, orientation, movable, lastMove, check, hint = null, coords = true, outlines = true, pieceSet = 'staunton', legalFrom, onmove }: Props = $props();
 
   const FILES = 'abcdefgh';
+  const PIECES = $derived(pieceImages(pieceSet));
 
   /** square -> piece code like 'wq' */
   const pieces = $derived.by(() => {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Move } from 'chess.js';
   import { onMount, type Snippet } from 'svelte';
-  import { PIECES } from './pieces';
+  import { pieceImages } from './pieceSets';
   import type { Realm } from './realms';
   import { settings } from './settings.svelte';
   import { ChessScene, VIEWS } from './three/scene3d';
@@ -84,7 +84,7 @@
   onMount(() => {
     const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     try {
-      const s = new ChessScene(host, { reduceMotion, onPick: (sq) => pick(sq), pickable: (sq) => own(sq) || dests.some((m) => m.to === sq) });
+      const s = new ChessScene(host, { reduceMotion, pieceSet: settings.pieceSet, onPick: (sq) => pick(sq), pickable: (sq) => own(sq) || dests.some((m) => m.to === sq) });
       s.setView(settings.view3dAngle);
       s.setOrientation(orientation, true);
       scene = s;
@@ -106,6 +106,7 @@
   $effect(() => scene?.setPosition(fen, lastMove));
   $effect(() => scene?.setOrientation(orientation));
   $effect(() => scene?.setCoords(coords));
+  $effect(() => scene?.setPieceSet(settings.pieceSet));
   $effect(() => scene?.setView(settings.view3dAngle));
   const viewLabel = $derived(VIEWS.find((v) => v.id === settings.view3dAngle)?.label ?? 'Player');
   function nextView() {
@@ -168,7 +169,7 @@
         <span>Promote to</span>
         <div>
           {#each ['q', 'n', 'r', 'b'] as p}
-            <button onclick={(e) => { e.stopPropagation(); choosePromotion(p); }} style:background-image="url({PIECES[promo.color + p]})" aria-label="Promote to {promoNames[p]}" title={promoNames[p]}></button>
+            <button onclick={(e) => { e.stopPropagation(); choosePromotion(p); }} style:background-image="url({pieceImages(settings.pieceSet)[promo.color + p]})" aria-label="Promote to {promoNames[p]}" title={promoNames[p]}></button>
           {/each}
         </div>
       </div>

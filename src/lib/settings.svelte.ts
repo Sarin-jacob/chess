@@ -1,6 +1,7 @@
 // Per-device preferences, kept in localStorage.
 import type { Rules } from './db';
 import { randomName } from './names';
+import type { PieceSetId } from './pieceSets';
 
 export interface SettingsData {
   realm: string; // 'random' or a realm id
@@ -10,6 +11,8 @@ export interface SettingsData {
   coords: boolean;
   /** Contrasting edge around 2D pieces so they stand out on any square. */
   outlines: boolean;
+  /** Piece look, shared by the 2D and 3D boards. */
+  pieceSet: PieceSetId;
   level: number;
   name: string;
   /** True while the name is one we generated rather than one the player typed. */
@@ -30,6 +33,7 @@ const DEFAULTS: SettingsData = {
   particles: true,
   coords: true,
   outlines: true,
+  pieceSet: 'staunton',
   level: 3,
   name: '',
   nameAuto: true,

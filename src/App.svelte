@@ -9,7 +9,7 @@
   import PlayPanel from './lib/panels/PlayPanel.svelte';
   import RealmPanel from './lib/panels/RealmPanel.svelte';
   import SettingsPanel from './lib/panels/SettingsPanel.svelte';
-  import { PIECES } from './lib/pieces';
+  import { pieceImages } from './lib/pieceSets';
   import Scenery from './lib/Scenery.svelte';
   import { settings } from './lib/settings.svelte';
 
@@ -182,7 +182,7 @@
           <span class="pname">{nameFor(c)}</span>
           {#if game.thinking && game.turn === c}<span class="think">meditating<i>.</i><i>.</i><i>.</i></span>{/if}
           <span class="caps">
-            {#each caps as p}<img src={PIECES[(c === 'w' ? 'b' : 'w') + p]} alt={p} class:rim={settings.outlines && c === 'w'} />{/each}
+            {#each caps as p}<img src={pieceImages(settings.pieceSet)[(c === 'w' ? 'b' : 'w') + p]} alt={p} class:rim={settings.outlines && c === 'w'} />{/each}
             {#if adv > 0}<em>+{adv}</em>{/if}
           </span>
           {#if game.active && game.rules.clock}
@@ -234,6 +234,7 @@
           hint={game.hint}
           coords={settings.coords}
           outlines={settings.outlines}
+          pieceSet={settings.pieceSet}
           legalFrom={(sq) => game.legalFrom(sq)}
           onmove={(f, t, p) => game.tryMove(f, t, p)}
         />

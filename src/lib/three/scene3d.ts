@@ -76,6 +76,8 @@ function label(text: string): CanvasTexture {
 
 export interface SceneOptions {
   reduceMotion: boolean;
+  /** Piece set id, see pieceSets.ts. */
+  pieceSet: string;
   onPick: (square: string | null) => void;
   /** Return true when hovering this square should show a pointer cursor. */
   pickable: (square: string) => boolean;
@@ -103,6 +105,7 @@ export class ChessScene {
   private pieceGroup = new Group();
   private coordGroup = new Group();
   private geos: Record<string, PieceGeometry>;
+  private pieceSet: string;
   private pieceMats: Record<Color2, MeshPhysicalMaterial> = { w: new MeshPhysicalMaterial(), b: new MeshPhysicalMaterial() };
   private trimMats: Record<Color2, MeshPhysicalMaterial> = { w: new MeshPhysicalMaterial(), b: new MeshPhysicalMaterial() };
   private outlineMats: Record<Color2, MeshBasicMaterial> = { w: new MeshBasicMaterial(), b: new MeshBasicMaterial() };
@@ -154,7 +157,8 @@ export class ChessScene {
     this.rim.position.set(-6, 5, -9);
     this.scene.add(this.hemi, this.key, this.rim);
 
-    this.geos = buildPieceGeometries();
+    this.pieceSet = opts.pieceSet;
+    this.geos = buildPieceGeometries(this.pieceSet);
     this.buildBoard();
     this.scene.add(this.pieceGroup, this.destGroup, this.coordGroup);
 
@@ -266,6 +270,16 @@ export class ChessScene {
     this.applyMarks();
   }
 
+  setPieceSet(id: string) {
+    if (id === this.pieceSet) return;
+    this.pieceSet = id;
+    Object.values(this.geos).forEach((g) => { g.body.dispose(); g.trim.dispose(); });
+    this.geos = buildPieceGeometries(id);
+    const fen = this.fen;
+    this.fen = '';
+    if (fen) this.setPosition(fen + ' w', null, true);
+  }
+
   setCoords(on: boolean) {
     this.coordGroup.visible = on;
   }
@@ -297,7 +311,7 @@ export class ChessScene {
     this.pieceGroup.clear();
     for (const [sq, code] of parseFen(fen)) {
       const col = code[0] as Color2;
-      const geo = this.geos[code[1]];
+      const geo = this.geos[code] ?? this.geos[code[1]];
       const m = new Group();
       const body = new Mesh(geo.body, this.pieceMats[col]);
       const trim = new Mesh(geo.trim, this.trimMats[col]);
@@ -309,7 +323,10 @@ export class ChessScene {
       const p = sqPos(sq);
       m.position.set(p.x, 0, p.z);
       // Knights show their profile, facing the centre files and turned a little toward the enemy.
-      if (code[1] === 'n') {
+      if (this.pieceSet === 'discs') {
+        // Glyphs read upright for the side that owns them, as on a xiangqi board.
+        m.rotation.y = code[0] === 'w' ? 0 : Math.PI;
+      } else if (code[1] === 'n') {
         const inward = FILES.indexOf(sq[0]) < 4 ? 0 : Math.PI;
         const lean = (code[0] === 'w' ? 0.45 : -0.45) * (inward ? -1 : 1);
         m.rotation.y = inward + lean;

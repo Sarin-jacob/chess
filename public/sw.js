@@ -1,5 +1,5 @@
 // Offline support: network-first for pages, cache-first for hashed assets.
-const CACHE = 'nine-peaks-v1';
+const CACHE = 'nine-peaks-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './favicon.svg'];
 
 self.addEventListener('install', (e) => {

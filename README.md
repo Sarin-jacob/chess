@@ -31,6 +31,7 @@
   - **LAN duel** — two browsers talk directly over WebRTC. No server, no account: share an invite (QR / link / code, about 140 characters) and get the reply back by scanning its QR, clicking the reply link, or pasting it. Rivals you've met before join with just the link, with no reply at all. Draw offers, resignation and rematches (colours swap, new realm) included.
 - **House rules and clocks.** Before a match pick a time control (untimed, bullet to 30 min, with increments) and whether hints and takebacks are allowed. Clocks are synced in LAN duels; in LAN each player always sits at the bottom of their own board.
 - **Optional 3D board.** Each realm carves its own set — ice and glacier glass, maple and walnut, temple gold and lava-veined basalt, porcelain and red lacquer, jade and bronze, moon-silver and obsidian, rose salt and sandstone — with fixed Player / Overhead / Low camera angles (`v` to switch) and a full-screen view.
+- **Three piece sets, in 2D and 3D.** Staunton, Minimal (flat geometric silhouettes) and Xiangqi discs (lacquered discs with brushed 王 后 车 象 马 兵/卒 glyphs that face their owner). Pick one in Settings.
 - **Your archive, in your browser.** Every game is saved to IndexedDB as you play: resume unfinished matches, review any game move by move, see your win/loss record and which realms you've conquered, import/export PGN.
 - **Feels good to play.** Tap-to-move or drag-and-drop, legal-move hints, promotion picker, piece outlines that keep dark pieces visible on dark squares, right-click arrows and circles for planning (Shift/Alt change colour), synthesized wood-knock and temple-bell sounds, haptics on supported phones, keyboard review (← → ↑ ↓, `f` to flip).
 - **Installable & offline.** PWA manifest + service worker; once loaded it works without a network.
@@ -51,6 +52,8 @@ Stack: [Svelte 5](https://svelte.dev) + TypeScript + [Vite](https://vite.dev), [
 src/
   App.svelte            layout, player bars, start gate, result dialog
   lib/Board.svelte      board UI (pointer/touch, drag, promotion, animation, arrows)
+  lib/pieceSets.ts      piece sets: Minimal and Xiangqi-disc SVGs, set list
+  lib/glyphs.ts         brush glyph outlines for the disc set (generated)
   lib/Board3D.svelte    3D board (three.js, loaded only when switched on)
   lib/three/            3D scene, piece geometry and per-realm materials
   lib/Scenery.svelte    sky, mountains and canvas weather per realm
@@ -90,7 +93,7 @@ cleared, or the link reaches a different device, the guest is told to ask for a 
 
 ## Credits
 
-- Piece set: *cburnett* by Colin M.L. Burnett (BSD / GPL / GFDL), via Wikimedia Commons.
+- Piece set: *cburnett* by Colin M.L. Burnett (BSD / GPL / GFDL), via Wikimedia Commons. The Minimal and Xiangqi-disc sets are drawn for this project; the disc glyphs are traced from Ma Shan Zheng (`scripts/glyph-paths.py`).
 - Fonts: [Cinzel](https://fonts.google.com/specimen/Cinzel) and [Ma Shan Zheng](https://fonts.google.com/specimen/Ma+Shan+Zheng) (SIL OFL); the latter is subset to the glyphs used (`scripts/subset-font.py`).
 
 ## License

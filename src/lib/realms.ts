@@ -162,5 +162,12 @@ export const GLOSSARY: [string, string][] = [
   ['敗', 'Defeat'],
   ['和', 'Draw — harmony'],
   ['終', 'The end'],
+  ['王', 'King (Xiangqi disc set)'],
+  ['后', 'Queen'],
+  ['车', 'Rook — chariot'],
+  ['象', 'Bishop — elephant'],
+  ['马', 'Knight — horse'],
+  ['兵', 'Pawn — soldier, white side'],
+  ['卒', 'Pawn — soldier, black side'],
   ...REALMS.map((r) => [r.hanzi, r.meaning] as [string, string]),
 ];
