@@ -19,7 +19,14 @@ export type LanMessage =
   | { t: 'draw'; action: 'offer' | 'accept' | 'decline' }
   | { t: 'rematch'; action: 'offer' | 'accept' }
   | { t: 'emote'; text: string }
-  | { t: 'sync-req' };
+  | { t: 'sync-req' }
+  // Heterodox paths: the host names the variant and formation, moves travel as from-to squares.
+  | { t: 'h-hello'; name: string; hostColor: 'w' | 'b'; variant: string; back: string; moves: string[]; auto?: boolean }
+  | { t: 'h-hi'; name: string }
+  | { t: 'h-move'; uci: string; ply: number }
+  | { t: 'h-sync' }
+  | { t: 'h-resign' }
+  | { t: 'h-again'; action: 'offer' | 'accept' };
 
 export type LinkState = 'idle' | 'gathering' | 'waiting' | 'connecting' | 'open' | 'closed' | 'failed';
 

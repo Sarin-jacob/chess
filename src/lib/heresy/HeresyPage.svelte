@@ -1,17 +1,20 @@
 <script lang="ts">
-  // 邪魔外道: the heterodox paths, reached from a hidden mark in Settings. Six anarchy
-  // variants on their own rules engine; matches here are not saved to the archive.
+  // 邪魔外道: the heterodox paths, reached from a hidden mark in Settings. Eight anarchy
+  // variants on their own rules engine, against the AI, on one device or over LAN.
+  // Matches here are not saved to the archive.
   import type { Move } from 'chess.js';
   import { onDestroy } from 'svelte';
   import Board from '../Board.svelte';
   import { play, type Fx } from '../fx';
-  import { keepAwake } from '../screen';
+  import { LanLink, rememberRival, type LanMessage, type LinkState, type Rival } from '../lan';
+  import { enterFullscreen, exitFullscreen, keepAwake, onFullscreenExit } from '../screen';
   import { settings } from '../settings.svelte';
   import type { HeresyRequest, HeresyResponse } from './heresy.worker';
-  import { PATHS, type Faction, type Path } from './paths';
+  import LanSetup from './LanSetup.svelte';
+  import { pathById, PATHS, type Faction, type Path } from './paths';
   import { inCheck, kingSq, legalMoves, makeMove, ORTHODOX_BACK, other, outcome, RULES, san, shuffledBack, sqName, startPos, toFen, type Color, type Kind, type Outcome, type Pos, type VMove } from './rules';
 
-  let { onexit }: { onexit: () => void } = $props();
+  let { onexit, joinCode = '' }: { onexit: () => void; joinCode?: string } = $props();
 
   const FACTIONS: Record<Faction, { title: string; hanzi: string; blurb: string }> = {
     unorthodox: { title: 'Unorthodox Sects', hanzi: '邪派', blurb: 'They bow to no alliance and keep scriptures the orthodox sects have burned.' },
@@ -19,8 +22,8 @@
   };
 
   let path = $state<Path | null>(null);
-  let stage = $state<'choose' | 'setup' | 'play'>('choose');
-  let mode = $state<'ai' | 'local'>('ai');
+  let stage = $state<'choose' | 'setup' | 'join' | 'play'>('choose');
+  let mode = $state<'ai' | 'local' | 'lan'>('ai');
   let colorPick = $state<Color | 'random'>('w');
   let level = $state(2);
 
@@ -44,13 +47,195 @@
 
   $effect(() => keepAwake(settings.keepAwake && stage === 'play' && !result));
 
+  // An invite link opened onto this page: the host's path is learnt once connected.
+  $effect(() => { if (joinCode) stage = 'join'; });
+
+  // Full view: the board fills the screen and nothing behind it scrolls.
+  let focus = $state(false);
+  $effect(() => {
+    if (!focus) return;
+    enterFullscreen();
+    document.documentElement.classList.add('locked');
+    const off = onFullscreenExit(() => (focus = false));
+    return () => { off(); exitFullscreen(); document.documentElement.classList.remove('locked'); };
+  });
+  $effect(() => { if (stage !== 'play') focus = false; });
+
+  // ---------- LAN ----------
+  let link: LanLink | null = null;
+  let linkState = $state<LinkState>('idle');
+  let isHost = $state(false);
+  let opponent = $state('');
+  let invite = $state('');
+  let reply = $state('');
+  let joined = $state(false);
+  let quickFor = $state('');
+  let quick = $state(false);
+  let lanError = $state('');
+  let lanBusy = $state(false);
+  let again = $state<'none' | 'sent' | 'received'>('none');
+  let hostColor: Color = 'w';
+  const awaiting = $derived(isHost && linkState === 'waiting' && !quick);
+  const uci = (m: VMove) => sqName(m.from) + sqName(m.to) + (m.promotion ?? '');
+
+  async function lanRun(fn: () => Promise<void>) {
+    lanBusy = true;
+    lanError = '';
+    try { await fn(); } catch (e) { lanError = e instanceof Error ? e.message : String(e); } finally { lanBusy = false; }
+  }
+
+  async function makeLink(host: boolean) {
+    link?.close();
+    isHost = host;
+    opponent = '';
+    quick = false;
+    const l = await LanLink.create(settings.useStun);
+    l.onState = (st) => {
+      if (link !== l) return;
+      linkState = st;
+      if (st !== 'open') return;
+      if (isHost) startLanGame();
+      else l.send({ t: 'h-hi', name: settings.name });
+    };
+    l.onMessage = (m) => { if (link === l) onLan(m); };
+    link = l;
+    return l;
+  }
+
+  const hostLan = (rival?: Rival) => lanRun(async () => {
+    reply = '';
+    quickFor = rival?.name ?? '';
+    hostColor = colorPick === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : colorPick;
+    const l = await makeLink(true);
+    invite = await l.host(rival?.fp);
+    quick = l.quick;
+  });
+  const acceptReply = (code: string) => lanRun(async () => {
+    if (!link) throw new Error('Create an invite first.');
+    await link.accept(code);
+  });
+  const joinLan = (code: string) => lanRun(async () => {
+    joined = false;
+    const l = await makeLink(false);
+    reply = (await l.join(code)) ?? '';
+    joined = true;
+    history.replaceState(null, '', location.pathname + '#/heresy');
+  });
+
+  function leaveLan() {
+    link?.close();
+    link = null;
+    linkState = 'idle';
+    invite = '';
+    reply = '';
+    joined = false;
+  }
+
+  // A reply link opened in another tab of this browser is handed over on this channel.
+  $effect(() => {
+    if (!awaiting || typeof BroadcastChannel !== 'function') return;
+    const ch = new BroadcastChannel('frost-chess-lan');
+    ch.onmessage = async (e) => {
+      if (!e.data?.reply) return;
+      try { await link!.accept(e.data.reply); ch.postMessage({ ack: e.data.id }); } catch { /* another invite's */ }
+    };
+    return () => ch.close();
+  });
+
+  function noteRival(name: string) {
+    const fp = link?.remoteFingerprint;
+    if (fp) rememberRival(fp, name);
+  }
+
+  /** Host: the link is open, so the duel starts on the host's terms. */
+  function startLanGame() {
+    mode = 'lan';
+    reset();
+    you = hostColor;
+    orientation = you;
+    stage = 'play';
+    fx('start');
+    if (rules.shuffle) shout(path!.cry);
+    sendHello();
+  }
+
+  function sendHello() {
+    link?.send({ t: 'h-hello', name: settings.name, hostColor: you!, variant: path!.id, back: formation.join(''), moves: hist.map((h) => uci(h.move)) });
+  }
+
+  function onLan(m: LanMessage) {
+    switch (m.t) {
+      case 'h-hello': {
+        const p = pathById(m.variant);
+        if (!p) return;
+        path = p;
+        mode = 'lan';
+        formation = m.back.split('') as Kind[];
+        reset();
+        you = other(m.hostColor);
+        orientation = you;
+        opponent = m.name;
+        noteRival(m.name);
+        for (const u of m.moves) {
+          const mv = moves.find((x) => uci(x) === u);
+          if (!mv) break;
+          apply(mv, { remote: true, quiet: true });
+        }
+        stage = 'play';
+        fx('start');
+        if (rules.shuffle && !m.moves.length) shout(p.cry);
+        break;
+      }
+      case 'h-hi':
+        opponent = m.name;
+        noteRival(m.name);
+        break;
+      case 'h-move': {
+        if (stage !== 'play' || result || pos.turn === you) return;
+        const mv = m.ply === hist.length + 1 ? moves.find((x) => uci(x) === m.uci) : undefined;
+        if (mv) apply(mv, { remote: true });
+        else link?.send({ t: 'h-sync' });
+        break;
+      }
+      case 'h-sync':
+        if (isHost) sendHello();
+        break;
+      case 'h-resign':
+        result = { winner: you, reason: `${opponent || 'your rival'} resigned` };
+        shownResult = true;
+        fx('win');
+        break;
+      case 'h-again':
+        if (m.action === 'offer') again = 'received';
+        else if (isHost) rematch();
+        break;
+    }
+  }
+
+  function offerAgain() {
+    if (again === 'received') {
+      if (isHost) rematch();
+      else link?.send({ t: 'h-again', action: 'accept' });
+      return;
+    }
+    again = 'sent';
+    link?.send({ t: 'h-again', action: 'offer' });
+  }
+
+  /** Host: colours swap, and the Thousand Faces deal a new formation. */
+  function rematch() {
+    hostColor = other(you!);
+    if (rules.shuffle) formation = shuffledBack();
+    startLanGame();
+  }
+
   let worker: Worker | null = null;
   let seq = 0;
   function ai() {
     worker ??= new Worker(new URL('./heresy.worker.ts', import.meta.url), { type: 'module' });
     return worker;
   }
-  onDestroy(() => { worker?.terminate(); keepAwake(false); });
+  onDestroy(() => { worker?.terminate(); link?.close(); keepAwake(false); });
 
   function choose(p: Path) {
     path = p;
@@ -58,18 +243,24 @@
     stage = 'setup';
   }
 
-  function begin() {
-    if (!path) return;
+  function reset() {
     worker?.terminate();
     worker = null;
     seq++;
-    // "Again" on the Thousand Faces deals a fresh formation; the setup one is used first.
-    if (rules.shuffle && stage === 'play') formation = shuffledBack();
     pos = startPos(rules, formation);
     hist = [];
     result = null;
     shownResult = false;
     thinking = false;
+    again = 'none';
+  }
+
+  function begin() {
+    if (!path) return;
+    if (mode === 'lan') return offerAgain();
+    // "Again" on the Thousand Faces deals a fresh formation; the setup one is used first.
+    if (rules.shuffle && stage === 'play') formation = shuffledBack();
+    reset();
     const c = colorPick === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : colorPick;
     you = mode === 'ai' ? c : null;
     orientation = you ?? 'w';
@@ -89,11 +280,17 @@
     setTimeout(() => { if (cry?.key === k) cry = null; }, 1600);
   }
 
-  function apply(m: VMove) {
+  /** Play a move. `remote`: it came from the LAN rival; `quiet`: replaying, no fanfare. */
+  function apply(m: VMove, opts: { remote?: boolean; quiet?: boolean } = {}) {
     const before = pos;
     const s = san(before, m, rules, moves);
     pos = makeMove(before, m, rules);
     hist = [...hist, { before, move: m, san: s }];
+    if (mode === 'lan' && !opts.remote) link?.send({ t: 'h-move', uci: uci(m), ply: hist.length });
+    if (opts.quiet) {
+      result = outcome(pos, rules);
+      return;
+    }
 
     // Each path has its signature moment.
     const p = path!;
@@ -139,7 +336,9 @@
     w.postMessage(req);
   }
 
-  const movable = $derived(stage === 'play' && !result && !thinking && (mode === 'local' || pos.turn === you) ? pos.turn : null);
+  const movable = $derived(
+    stage === 'play' && !result && !thinking && (mode === 'local' || (pos.turn === you && (mode === 'ai' || linkState === 'open'))) ? pos.turn : null,
+  );
 
   function legalFrom(sq: string): Move[] {
     return moves
@@ -169,7 +368,8 @@
 
   function resign() {
     if (result || !hist.length) return;
-    const loser = mode === 'ai' ? you! : pos.turn;
+    const loser = mode === 'local' ? pos.turn : you!;
+    if (mode === 'lan') link?.send({ t: 'h-resign' });
     result = { winner: other(loser), reason: 'resignation' };
     shownResult = true;
     fx('lose');
@@ -188,7 +388,8 @@
 
   function nameFor(c: Color) {
     if (mode === 'local') return c === 'w' ? 'White' : 'Black';
-    return c === you ? settings.name || 'You' : path!.foes[level - 1];
+    if (c === you) return settings.name || 'You';
+    return mode === 'lan' ? opponent || 'Rival' : path!.foes[level - 1];
   }
 
   const verdict = $derived.by(() => {
@@ -199,11 +400,13 @@
   });
 </script>
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && focus) focus = false; }} />
+
 <div class="heresy {palette}">
   <div class="mist" aria-hidden="true"></div>
 
   <header>
-    <button class="back" onclick={() => (stage === 'choose' ? onexit() : (stage = 'choose'))}>
+    <button class="back" onclick={() => { if (stage === 'choose') return onexit(); leaveLan(); mode = mode === 'lan' ? 'ai' : mode; stage = 'choose'; }}>
       {stage === 'choose' ? '↩ Return to the orthodox path' : '↩ All paths'}
     </button>
     <div class="title">
@@ -229,9 +432,25 @@
         </div>
       </section>
     {/each}
-  {:else if path}
+    <p class="join-cta"><button onclick={() => (stage = 'join')}>⇄ Join a rival's heterodox duel</button></p>
+  {:else if stage === 'join'}
     <div class="arena">
       <div class="stage">
+        <div class="preview">
+          <span class="hz big">邪</span>
+          <small>The host chooses the path</small>
+        </div>
+      </div>
+      <aside class="side">
+        <h2>Join a heterodox duel</h2>
+        <p class="motto">Open your rival's invite. Whatever scripture they keep, you will play by it.</p>
+        <LanSetup fixedRole="join" {invite} {reply} {joined} {quickFor} {linkState} error={lanError} busy={lanBusy} {awaiting} {joinCode}
+          onhost={hostLan} onjoin={joinLan} onaccept={acceptReply} onleave={leaveLan} />
+      </aside>
+    </div>
+  {:else if path}
+    <div class="arena">
+      <div class="stage" class:focus>
         {#if stage === 'play'}
           {@const top = orientation === 'w' ? 'b' : 'w'}
           {#snippet bar(c: Color)}
@@ -261,11 +480,27 @@
             {#if cry}{#key cry.key}<div class="cry">{cry.text}</div>{/key}{/if}
           </div>
           {@render bar(orientation)}
+          {#if mode === 'lan' && (linkState === 'closed' || linkState === 'failed')}
+            <p class="lost">The link to {opponent || 'your rival'} broke. Moves made from here won't reach them.</p>
+          {:else if mode === 'lan' && again === 'received'}
+            <p class="lost">{opponent || 'Your rival'} wants another duel.</p>
+          {/if}
           <div class="controls">
-            <button onclick={undo} disabled={!hist.length || thinking}>↶ Undo</button>
+            {#if mode !== 'lan'}<button onclick={undo} disabled={!hist.length || thinking}>↶ Undo</button>{/if}
             <button onclick={() => (orientation = other(orientation))}>⇅ Flip</button>
             <button onclick={resign} disabled={!!result || !hist.length}>⚑ Resign</button>
-            <button onclick={begin}>↻ Again</button>
+            {#if mode === 'lan'}
+              <button onclick={offerAgain} disabled={again === 'sent' || linkState !== 'open'}>
+                {again === 'received' ? '↻ Accept' : again === 'sent' ? 'Offered' : '↻ Again'}
+              </button>
+            {:else}
+              <button onclick={begin}>↻ Again</button>
+            {/if}
+            {#if focus}
+              <button onclick={() => (focus = false)} title="Leave full view (Esc)">✕ Exit</button>
+            {:else}
+              <button onclick={() => (focus = true)} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
+            {/if}
           </div>
         {:else if rules.shuffle}
           <!-- The formation to be played, so it can be rerolled before starting. -->
@@ -291,19 +526,27 @@
             <div class="seg">
               <button class:on={mode === 'ai'} onclick={() => (mode = 'ai')}>Vs the sect</button>
               <button class:on={mode === 'local'} onclick={() => (mode = 'local')}>Same device</button>
+              <button class:on={mode === 'lan'} onclick={() => (mode = 'lan')}>LAN duel</button>
             </div>
-            {#if mode === 'ai'}
+            {#if mode === 'ai' || mode === 'lan'}
               <div class="seg">
                 {#each [['w', 'White'], ['random', 'Random'], ['b', 'Black']] as const as [v, l]}
                   <button class:on={colorPick === v} onclick={() => (colorPick = v)}>{l}</button>
                 {/each}
               </div>
+            {/if}
+            {#if mode === 'ai'}
               <label class="level">
                 <span>Opponent <b>{path.foes[level - 1]}</b> · {level}/4</span>
                 <input type="range" min="1" max="4" bind:value={level} />
               </label>
             {/if}
-            <button class="primary" onclick={begin}>Enter the {path.faction === 'demonic' ? 'cult' : 'sect'}</button>
+            {#if mode === 'lan'}
+              <LanSetup {invite} {reply} {joined} {quickFor} {linkState} error={lanError} busy={lanBusy} {awaiting}
+                onhost={hostLan} onjoin={joinLan} onaccept={acceptReply} onleave={leaveLan} />
+            {:else}
+              <button class="primary" onclick={begin}>Enter the {path.faction === 'demonic' ? 'cult' : 'sect'}</button>
+            {/if}
           </div>
         {:else}
           <ol class="moves">
@@ -327,7 +570,11 @@
         <h2>{verdict.title}</h2>
         <p>{result.reason}</p>
         <div class="row">
-          <button class="primary" onclick={begin}>Again</button>
+          {#if mode !== 'lan' || linkState === 'open'}
+            <button class="primary" onclick={begin} disabled={mode === 'lan' && again === 'sent'}>
+              {mode === 'lan' ? (again === 'received' ? 'Accept another' : again === 'sent' ? 'Offered' : 'Offer another') : 'Again'}
+            </button>
+          {/if}
           <button onclick={() => (shownResult = false)}>Look at the board</button>
         </div>
       </div>
@@ -414,6 +661,23 @@
   .palms i { font-family: 'Ma Shan Zheng', serif; font-style: normal; font-size: 1.1rem; color: color-mix(in srgb, var(--muted) 45%, transparent); }
   .palms i.hit { color: var(--accent); text-shadow: 0 0 10px var(--glow); }
   .controls { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .lost { margin: 0; text-align: center; font-size: 0.85rem; color: var(--accent); }
+  .join-cta { position: relative; text-align: center; margin: 0 0 2rem; }
+  .join-cta button { background: var(--panel); border: 1px solid var(--panel-border); color: var(--ink); }
+  .stage.focus {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    max-width: none;
+    min-width: 0;
+    align-content: center;
+    justify-content: center;
+    grid-template-columns: min(100vw - 16px, 100dvh - 150px);
+    padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+    background: radial-gradient(ellipse at 50% 35%, var(--bg3), var(--bg2) 45%, var(--bg1));
+    overscroll-behavior: none;
+    touch-action: none;
+  }
   .controls button { flex: 1 1 auto; }
   .cry {
     position: absolute;
