@@ -26,6 +26,16 @@
   ];
 
   let tab = $state<Tab>('play');
+  // The heterodox paths live at #/heresy, behind a mark in Settings; fetched only when visited.
+  let heresy = $state(location.hash === '#/heresy');
+  let HeresyPage = $state<Component<any> | null>(null);
+  $effect(() => {
+    if (heresy && !HeresyPage) import('./lib/heresy/HeresyPage.svelte').then((m) => (HeresyPage = m.default));
+  });
+  function leaveHeresy() {
+    history.replaceState(null, '', location.pathname);
+    heresy = false;
+  }
   let joinCode = $state('');
   let ready = $state(false);
   let dismissed = $state('');
@@ -59,6 +69,7 @@
 
   /** Pick up an invite link (#join=…) or a reply link (#reply=…), including in an already-open tab. */
   function readInvite() {
+    heresy = location.hash === '#/heresy';
     const m = location.hash.match(/#join=(.+)$/);
     if (m) {
       joinCode = m[1];
@@ -173,6 +184,9 @@
 
 <svelte:window onkeydown={onkey} />
 
+{#if heresy}
+  {#if HeresyPage}<HeresyPage onexit={leaveHeresy} />{/if}
+{:else}
 <Scenery realm={game.realm} animate={settings.particles} />
 
 <div class="app">
@@ -354,6 +368,7 @@
   {/key}
 {/if}
 
+{/if}
 <style>
   .app {
     min-height: 100dvh;

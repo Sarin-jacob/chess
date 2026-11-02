@@ -34,6 +34,10 @@
 - **Three piece sets, in 2D and 3D.** Staunton, Minimal (flat geometric silhouettes) and Xiangqi discs (lacquered discs with brushed 王 后 车 象 马 兵/卒 glyphs that face their owner). Pick one in Settings.
 - **Your archive, in your browser.** Every game is saved to IndexedDB as you play: resume unfinished matches, review any game move by move, see your win/loss record and which realms you've conquered, import/export PGN.
 - **Feels good to play.** Tap-to-move or drag-and-drop, legal-move hints, promotion picker, piece outlines that keep dark pieces visible on dark squares, right-click arrows and circles for planning (Shift/Alt change colour), synthesized wood-knock and temple-bell sounds, haptics on supported phones, keyboard review (← → ↑ ↓, `f` to flip).
+- **Phone friendly.** The screen stays awake during a match (Settings), and ⛶ fills the screen with the 2D board so a stray swipe can't scroll the page. The 3D full view does the same.
+- **Advantage bar** (Settings): the engine's score for the position on the board, in pawns or as mate-in-N.
+- **Review with the Elder.** After a game (or any game from the archive), every move is scored and graded, from *Heavenly* (best move) to *Qi Deviation* (blunder), with accuracy for each side, an advantage graph, the better move shown on the board, and advice drawn from your patterns: hanging pieces, missed tactics, early queen sorties, an uncastled king, a weak game phase. Chess terms link to a glossary and to references (can be turned off in Settings).
+- **A path not on any map.** <details><summary>Spoiler</summary>A faint 邪 at the bottom of Settings leads to the Heterodox Paths (`#/heresy`): six anarchy-chess variants on their own rules engine and AI. Unorthodox Sects: Holy Hell (forced en passant), Il Vaticano Conclave, Bongcloud Order (striding kings, no castling, ascend to win), Three Palms (three-check). Demonic Cult: Blood Furnace (atomic) and Reversed Heart (antichess).</details>
 - **Installable & offline.** PWA manifest + service worker; once loaded it works without a network.
 - **Works in Firefox and Chromium** (desktop and mobile).
 
@@ -53,6 +57,11 @@ src/
   App.svelte            layout, player bars, start gate, result dialog
   lib/Board.svelte      board UI (pointer/touch, drag, promotion, animation, arrows)
   lib/pieceSets.ts      piece sets: Minimal and Xiangqi-disc SVGs, set list
+  lib/review.svelte.ts  game review: grading, accuracy, the Elder's counsel
+  lib/glossary.ts       chess terms and reference links for reviews
+  lib/EvalBar.svelte    advantage bar
+  lib/screen.ts         wake lock and browser full screen
+  lib/heresy/           variant rules engine, its AI worker and the hidden page
   lib/glyphs.ts         brush glyph outlines for the disc set (generated)
   lib/Board3D.svelte    3D board (three.js, loaded only when switched on)
   lib/three/            3D scene, piece geometry and per-realm materials

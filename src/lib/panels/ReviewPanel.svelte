@@ -88,7 +88,7 @@
 
 <section class="review">
   <header>
-    <span class="hz" title="鑑 — Mirror (review)">鑑</span>
+    <span class="hz" title="鉴 — Mirror (review)">鉴</span>
     <div><b>The Elder's Mirror</b><small>Every move weighed against the Elder's own.</small></div>
     <button class="x" onclick={() => review.close()} title="Back to the move list">✕</button>
   </header>

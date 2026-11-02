@@ -53,6 +53,12 @@
       {/each}
     </dl>
   </details>
+  <!-- Not every path is on the map. -->
+  <a class="stray" href="#/heresy" title="A path not on any map">
+    <span class="crack" aria-hidden="true"></span>
+    <span class="hz">邪</span>
+    <span class="whisper">Stray from the orthodox path…</span>
+  </a>
 </section>
 
 <style>
@@ -93,6 +99,24 @@
   .set-row button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   .preview { display: flex; padding: 0.25rem; border-radius: 6px; background: linear-gradient(90deg, var(--light) 50%, var(--dark) 50%); }
   .preview img { width: 30px; height: 30px; }
+  .stray {
+    justify-self: center;
+    display: grid;
+    justify-items: center;
+    gap: 0.15rem;
+    margin-top: 0.6rem;
+    padding: 0.3rem 1rem;
+    color: inherit;
+    text-decoration: none;
+    opacity: 0.22;
+    transition: opacity 0.6s;
+  }
+  .stray .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1.3rem; line-height: 1; color: var(--muted); transition: color 0.6s, text-shadow 0.6s; }
+  .stray .crack { width: 3rem; height: 1px; background: linear-gradient(90deg, transparent, var(--muted), transparent); }
+  .stray .whisper { font: italic 0.7rem 'Cinzel', serif; letter-spacing: 0.15em; color: var(--muted); max-height: 0; overflow: hidden; transition: max-height 0.6s; }
+  .stray:hover, .stray:focus-visible { opacity: 1; }
+  .stray:hover .hz, .stray:focus-visible .hz { color: #e5484d; text-shadow: 0 0 14px rgba(229, 72, 77, 0.8); }
+  .stray:hover .whisper, .stray:focus-visible .whisper { max-height: 1.2rem; }
   .glossary { font-size: 0.85rem; margin-top: 0.4rem; }
   .glossary summary { cursor: pointer; color: var(--muted); }
   .glossary dl { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.8rem; margin: 0.6rem 0 0; align-items: center; }

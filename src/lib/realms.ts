@@ -169,5 +169,6 @@ export const GLOSSARY: [string, string][] = [
   ['马', 'Knight — horse'],
   ['兵', 'Pawn — soldier, white side'],
   ['卒', 'Pawn — soldier, black side'],
+  ['鉴', 'Mirror — the game review'],
   ...REALMS.map((r) => [r.hanzi, r.meaning] as [string, string]),
 ];

@@ -42,7 +42,7 @@
 <section>
   {#if canReview}
     <button class="primary review" onclick={() => review.start(key, game.history, game.you, game.result)}>
-      <span class="hz">鑑</span> {review.key === key && review.status === 'done' ? 'Open the review' : 'Review with the Elder'}
+      <span class="hz">鉴</span> {review.key === key && review.status === 'done' ? 'Open the review' : 'Review with the Elder'}
     </button>
   {/if}
   <ol class="moves" bind:this={list}>
