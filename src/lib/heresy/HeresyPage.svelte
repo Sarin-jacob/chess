@@ -44,7 +44,8 @@
   const moves = $derived(legalMoves(pos, rules));
   const fen = $derived(toFen(pos));
   const last = $derived(hist.at(-1));
-  const palette = $derived(path?.faction ?? 'unorthodox');
+  // The list of paths keeps the sects' colours; a chosen path brings its own.
+  const palette = $derived(stage === 'setup' || stage === 'play' ? (path?.faction ?? 'unorthodox') : 'unorthodox');
 
   /** Poison jade for the sects, blood and ash for the cults. */
   const PALETTES: Record<Faction, Record<string, string>> = {
