@@ -32,7 +32,7 @@ export interface VMove {
   vatican?: { partner: number; victims: number[] };
 }
 
-export type VariantId = 'holyhell' | 'vatican' | 'bongcloud' | 'threecheck' | 'atomic' | 'antichess';
+export type VariantId = 'holyhell' | 'vatican' | 'bongcloud' | 'threecheck' | 'atomic' | 'antichess' | 'shuffle' | 'devour';
 
 export interface Rules {
   /** The king is royal: it can be checked and mated. */
@@ -48,11 +48,15 @@ export interface Rules {
   checksToWin: number;
   /** A king reaching the enemy back rank wins. */
   ascend: boolean;
+  /** The back rank starts in a random order, mirrored for black. */
+  shuffle: boolean;
+  /** A capturing piece (not a king) turns into what it captured. */
+  devour: boolean;
 }
 
 const ORTHODOX: Rules = {
   royal: true, castling: true, kingReach: 1, forcedEp: false, vatican: false, atomic: false,
-  mustCapture: false, promoteToKing: false, checksToWin: 0, ascend: false,
+  mustCapture: false, promoteToKing: false, checksToWin: 0, ascend: false, shuffle: false, devour: false,
 };
 
 export const RULES: Record<VariantId, Rules> = {
@@ -62,6 +66,8 @@ export const RULES: Record<VariantId, Rules> = {
   threecheck: { ...ORTHODOX, checksToWin: 3 },
   atomic: { ...ORTHODOX, atomic: true },
   antichess: { ...ORTHODOX, royal: false, castling: false, mustCapture: true, promoteToKing: true },
+  shuffle: { ...ORTHODOX, castling: false, shuffle: true },
+  devour: { ...ORTHODOX, devour: true },
 };
 
 export const other = (c: Color): Color => (c === 'w' ? 'b' : 'w');
@@ -76,8 +82,19 @@ const DIAG: [number, number][] = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 const ORTHO: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 const ALL = [...DIAG, ...ORTHO];
 
-export function startPos(rules: Rules): Pos {
-  const back: Kind[] = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+export const ORTHODOX_BACK: Kind[] = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+
+/** Any order at all: bishops may share a colour and the king may stand anywhere. */
+export function shuffledBack(): Kind[] {
+  const a = ORTHODOX_BACK.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+export function startPos(rules: Rules, back: Kind[] = ORTHODOX_BACK): Pos {
   const board: (Piece | null)[] = Array(64).fill(null);
   for (let f = 0; f < 8; f++) {
     board[f] = { c: 'b', k: back[f] };
@@ -194,7 +211,8 @@ function pseudo(p: Pos, rules: Rules): VMove[] {
       for (const dc of [-1, 1]) {
         if (!on(r + dir, c + dc)) continue;
         const to = (r + dir) * 8 + c + dc;
-        if (b[to]?.c === them) push(to);
+        // Devouring a piece on the far rank turns the pawn into that piece, so no promotion choice.
+        if (b[to]?.c === them) (rules.devour && row(to) === last ? add(i, to) : push(to));
         else if (to === p.ep) add(i, to, { ep: true, captured: 'p' });
       }
       continue;
@@ -270,6 +288,11 @@ export function makeMove(p: Pos, m: VMove, rules: Rules): Pos {
       const [rf, rt] = m.castle === 'k' ? [7, 5] : [0, 3];
       b[base + rt] = b[base + rf];
       b[base + rf] = null;
+    }
+    if (rules.devour && m.captured && mover.k !== 'k') {
+      // You become what you devour; a pawn made on the far rank is crowned.
+      const far = row(m.to) === (us === 'w' ? 0 : 7);
+      b[m.to] = { c: us, k: m.captured === 'p' && far ? 'q' : m.captured };
     }
     if (rules.atomic && m.captured) {
       // The blast takes the capturer, the captured piece and every non-pawn around.

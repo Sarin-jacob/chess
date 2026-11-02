@@ -55,6 +55,7 @@
   </details>
   <!-- Not every path is on the map. -->
   <a class="stray" href="#/heresy" title="A path not on any map">
+    <span class="miasma" aria-hidden="true"><i></i><i></i><i></i></span>
     <span class="crack" aria-hidden="true"></span>
     <span class="hz">邪</span>
     <span class="whisper">Stray from the orthodox path…</span>
@@ -100,6 +101,8 @@
   .preview { display: flex; padding: 0.25rem; border-radius: 6px; background: linear-gradient(90deg, var(--light) 50%, var(--dark) 50%); }
   .preview img { width: 30px; height: 30px; }
   .stray {
+    position: relative;
+    isolation: isolate;
     justify-self: center;
     display: grid;
     justify-items: center;
@@ -117,6 +120,33 @@
   .stray:hover, .stray:focus-visible { opacity: 1; }
   .stray:hover .hz, .stray:focus-visible .hz { color: #e5484d; text-shadow: 0 0 14px rgba(229, 72, 77, 0.8); }
   .stray:hover .whisper, .stray:focus-visible .whisper { max-height: 1.2rem; }
+  .miasma { position: absolute; inset: -0.8rem -1.5rem; z-index: -1; pointer-events: none; display: none; }
+  .miasma i {
+    position: absolute;
+    width: 5.5rem;
+    height: 3.6rem;
+    border-radius: 50%;
+    filter: blur(14px);
+    opacity: 0.75;
+    animation: seep 7s ease-in-out infinite alternate;
+  }
+  .miasma i:nth-child(1) { left: 10%; top: 20%; background: #7d3cc8; }
+  .miasma i:nth-child(2) { right: 8%; top: 30%; background: #2f9e5e; animation-duration: 9s; animation-delay: -3s; }
+  .miasma i:nth-child(3) { left: 35%; top: 5%; background: #b0283a; animation-duration: 11s; animation-delay: -6s; }
+  @keyframes seep {
+    0% { transform: translate(0, 0) scale(0.9); }
+    50% { transform: translate(0.6rem, -0.3rem) scale(1.15); }
+    100% { transform: translate(-0.5rem, 0.3rem) scale(1); }
+  }
+  /* Touch screens can't hover to find the path, so the miasma seeps out to beckon instead. */
+  @media (hover: none) {
+    .stray { opacity: 0.9; padding: 0.7rem 1.4rem; }
+    .stray .miasma { display: block; }
+    .stray .hz { color: #e8b4ff; text-shadow: 0 0 12px rgba(160, 80, 220, 0.9); font-size: 1.6rem; animation: pulse-glyph 4s ease-in-out infinite; }
+    .stray .whisper { max-height: 1.2rem; color: color-mix(in srgb, var(--ink) 75%, transparent); }
+  }
+  @keyframes pulse-glyph { 50% { text-shadow: 0 0 22px rgba(200, 90, 255, 1), 0 0 4px rgba(255, 255, 255, 0.6); } }
+  @media (prefers-reduced-motion: reduce) { .miasma i, .stray .hz { animation: none !important; } }
   .glossary { font-size: 0.85rem; margin-top: 0.4rem; }
   .glossary summary { cursor: pointer; color: var(--muted); }
   .glossary dl { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.8rem; margin: 0.6rem 0 0; align-items: center; }

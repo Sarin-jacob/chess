@@ -9,7 +9,7 @@
   import { settings } from '../settings.svelte';
   import type { HeresyRequest, HeresyResponse } from './heresy.worker';
   import { PATHS, type Faction, type Path } from './paths';
-  import { inCheck, kingSq, legalMoves, makeMove, other, outcome, RULES, san, sqName, startPos, toFen, type Color, type Outcome, type Pos, type VMove } from './rules';
+  import { inCheck, kingSq, legalMoves, makeMove, ORTHODOX_BACK, other, outcome, RULES, san, shuffledBack, sqName, startPos, toFen, type Color, type Kind, type Outcome, type Pos, type VMove } from './rules';
 
   let { onexit }: { onexit: () => void } = $props();
 
@@ -32,6 +32,9 @@
   let thinking = $state(false);
   let cry = $state<{ text: string; key: number } | null>(null);
   let shownResult = $state(false);
+  /** Back rank for the next match; only the Thousand Faces Cult changes it. */
+  let formation = $state.raw<Kind[]>(ORTHODOX_BACK);
+  const NAME: Record<Kind, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
   const rules = $derived(path ? RULES[path.id] : RULES.holyhell);
   const moves = $derived(legalMoves(pos, rules));
@@ -51,6 +54,7 @@
 
   function choose(p: Path) {
     path = p;
+    formation = RULES[p.id].shuffle ? shuffledBack() : ORTHODOX_BACK;
     stage = 'setup';
   }
 
@@ -59,7 +63,9 @@
     worker?.terminate();
     worker = null;
     seq++;
-    pos = startPos(rules);
+    // "Again" on the Thousand Faces deals a fresh formation; the setup one is used first.
+    if (rules.shuffle && stage === 'play') formation = shuffledBack();
+    pos = startPos(rules, formation);
     hist = [];
     result = null;
     shownResult = false;
@@ -69,6 +75,7 @@
     orientation = you ?? 'w';
     stage = 'play';
     fx('start');
+    if (rules.shuffle) shout(path.cry);
     maybeAi();
   }
 
@@ -96,6 +103,7 @@
     else if (p.id === 'threecheck' && pos.checks[m.color] > before.checks[m.color]) shout(`${p.cry} ${pos.checks[m.color]} of 3`);
     else if (p.id === 'atomic' && m.captured) shout(p.cry);
     else if (p.id === 'antichess' && m.captured && Math.random() < 0.35) shout(p.cry);
+    else if (p.id === 'devour' && m.captured && m.piece !== 'k' && m.captured !== m.piece) shout(`${p.cry} The ${NAME[m.piece]} becomes a ${NAME[m.captured]}.`);
 
     result = outcome(pos, rules);
     if (result) {
@@ -205,7 +213,7 @@
   </header>
 
   {#if stage === 'choose'}
-    <p class="lede">Beyond the Nine Peaks the rules bend. Four unorthodox sects and two demonic cults keep scriptures of their own. Choose which to learn.</p>
+    <p class="lede">Beyond the Nine Peaks the rules bend. Four unorthodox sects and four demonic cults keep scriptures of their own. Choose which to learn.</p>
     {#each ['unorthodox', 'demonic'] as const as f}
       <section class="faction {f}">
         <h2><span class="hz">{FACTIONS[f].hanzi}</span> {FACTIONS[f].title}</h2>
@@ -259,6 +267,10 @@
             <button onclick={resign} disabled={!!result || !hist.length}>⚑ Resign</button>
             <button onclick={begin}>↻ Again</button>
           </div>
+        {:else if rules.shuffle}
+          <!-- The formation to be played, so it can be rerolled before starting. -->
+          <Board fen={toFen(startPos(rules, formation))} orientation={colorPick === 'b' ? 'b' : 'w'} movable={null} lastMove={null} check={null} coords={settings.coords} outlines={settings.outlines} pieceSet={settings.pieceSet} legalFrom={() => []} onmove={() => false} />
+          <button onclick={() => (formation = shuffledBack())}>🎲 Reroll the formation</button>
         {:else}
           <div class="preview">
             <span class="hz big">{path.hanzi}</span>

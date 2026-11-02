@@ -114,6 +114,36 @@ export const PATHS: Path[] = [
     cry: 'Taken, as you wished.',
     foes: DEMONS,
   },
+  {
+    id: 'shuffle',
+    faction: 'demonic',
+    name: 'Thousand Faces Cult',
+    hanzi: '千面',
+    meaning: 'Thousand Faces',
+    motto: 'No two battles begin alike.',
+    rules: [
+      'The pawns stand where they always do. Behind them, every other piece starts in a random order, and black mirrors white exactly.',
+      'Bishops may share a colour and the king may stand anywhere on the back rank. Reroll the formation until it pleases you.',
+      'There is no castling. Otherwise the orthodox rules hold.',
+    ],
+    cry: 'The masks change!',
+    foes: DEMONS,
+  },
+  {
+    id: 'devour',
+    faction: 'demonic',
+    name: 'Soul Devourer Cult',
+    hanzi: '噬魂',
+    meaning: 'Soul Devouring',
+    motto: 'You become what you devour.',
+    rules: [
+      'A piece that captures takes the form of what it captured: a pawn that takes a queen becomes a queen, and a queen that takes a pawn becomes a pawn.',
+      'Kings devour nothing. A king that captures stays a king.',
+      'A piece that becomes a pawn on the far rank is crowned a queen at once. Otherwise the orthodox rules hold, castling included.',
+    ],
+    cry: 'Devoured!',
+    foes: DEMONS,
+  },
 ];
 
 export const pathById = (id: string) => PATHS.find((p) => p.id === id);
