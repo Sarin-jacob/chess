@@ -3,10 +3,11 @@
   // variants on their own rules engine, against the AI, on one device or over LAN.
   // Matches here are not saved to the archive.
   import type { Move } from 'chess.js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Component } from 'svelte';
   import Board from '../Board.svelte';
   import { play, type Fx } from '../fx';
   import { LanLink, rememberRival, type LanMessage, type LinkState, type Rival } from '../lan';
+  import { realmById, type Realm } from '../realms';
   import { enterFullscreen, exitFullscreen, keepAwake, onFullscreenExit } from '../screen';
   import { settings } from '../settings.svelte';
   import type { HeresyRequest, HeresyResponse } from './heresy.worker';
@@ -45,6 +46,36 @@
   const last = $derived(hist.at(-1));
   const palette = $derived(path?.faction ?? 'unorthodox');
 
+  /** Poison jade for the sects, blood and ash for the cults. */
+  const PALETTES: Record<Faction, Record<string, string>> = {
+    unorthodox: {
+      '--bg1': '#070a08', '--bg2': '#132019', '--bg3': '#2c4634',
+      '--ink': '#e4eee2', '--muted': '#93a896', '--accent': '#8fdc6a', '--accent-ink': '#0b1a07',
+      '--panel': 'rgba(12, 20, 15, 0.7)', '--panel-border': 'rgba(143, 220, 106, 0.22)',
+      '--light': '#b8c3a6', '--dark': '#4b5c46', '--coord-light': '#4b5c46', '--coord-dark': '#b8c3a6',
+      '--hl': 'rgba(143, 220, 106, 0.5)', '--last': 'rgba(205, 232, 90, 0.4)', '--check': 'rgba(255, 60, 60, 0.8)',
+      '--glow': 'rgba(143, 220, 106, 0.35)',
+    },
+    demonic: {
+      '--bg1': '#080102', '--bg2': '#250407', '--bg3': '#66090f',
+      '--ink': '#ffe7e2', '--muted': '#c99a92', '--accent': '#ff4a3d', '--accent-ink': '#1a0202',
+      '--panel': 'rgba(24, 4, 6, 0.72)', '--panel-border': 'rgba(255, 70, 60, 0.26)',
+      '--light': '#caa69b', '--dark': '#5c1b1e', '--coord-light': '#5c1b1e', '--coord-dark': '#caa69b',
+      '--hl': 'rgba(255, 70, 50, 0.55)', '--last': 'rgba(255, 150, 60, 0.42)', '--check': 'rgba(255, 30, 30, 0.9)',
+      '--glow': 'rgba(255, 40, 40, 0.45)',
+    },
+  };
+  const cssVars = $derived(Object.entries(PALETTES[palette]).map(([k, v]) => `${k}: ${v}`).join('; '));
+  // The 3D set borrows a realm's carving (jade and bronze for the sects, lava-veined basalt
+  // for the cults) with the path's own colours.
+  const realm3d = $derived<Realm>({ ...realmById(palette === 'demonic' ? 'volcano' : 'rain'), vars: PALETTES[palette] });
+
+  // The 3D board pulls in three.js, so it is fetched only once someone asks for it.
+  let Board3D = $state<Component<any> | null>(null);
+  $effect(() => {
+    if (settings.view3d && !Board3D) import('../Board3D.svelte').then((m) => (Board3D = m.default)).catch(() => (settings.view3d = false));
+  });
+
   $effect(() => keepAwake(settings.keepAwake && stage === 'play' && !result));
 
   // An invite link opened onto this page: the host's path is learnt once connected.
@@ -59,7 +90,7 @@
     const off = onFullscreenExit(() => (focus = false));
     return () => { off(); exitFullscreen(); document.documentElement.classList.remove('locked'); };
   });
-  $effect(() => { if (stage !== 'play') focus = false; });
+  $effect(() => { if (stage !== 'play' || settings.view3d) focus = false; });
 
   // ---------- LAN ----------
   let link: LanLink | null = null;
@@ -343,7 +374,7 @@
   function legalFrom(sq: string): Move[] {
     return moves
       .filter((m) => sqName(m.from) === sq)
-      .map((m) => ({ from: sqName(m.from), to: sqName(m.to), promotion: m.promotion, color: m.color, isEnPassant: () => !!m.ep }) as unknown as Move);
+      .map((m) => ({ from: sqName(m.from), to: sqName(m.to), promotion: m.promotion, color: m.color, captured: m.captured, isEnPassant: () => !!m.ep }) as unknown as Move);
   }
 
   function onmove(from: string, to: string, promotion?: string) {
@@ -402,7 +433,7 @@
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape' && focus) focus = false; }} />
 
-<div class="heresy {palette}">
+<div class="heresy {palette}" style={cssVars}>
   <div class="mist" aria-hidden="true"></div>
 
   <header>
@@ -463,8 +494,30 @@
               {/if}
             </div>
           {/snippet}
+          {#snippet hud()}
+            {@render bar(top)}
+            {@render bar(orientation)}
+          {/snippet}
           {@render bar(top)}
           <div class="board-wrap">
+            {#if settings.view3d && Board3D}
+            <Board3D
+              {fen}
+              {orientation}
+              {movable}
+              lastMove={last ? { from: sqName(last.move.from), to: sqName(last.move.to) } : null}
+              check={checkSq}
+              coords={settings.coords}
+              realm={realm3d}
+              {hud}
+              status={result ? (verdict?.title ?? '') : thinking ? 'Opponent plotting…' : (pos.turn === 'w' ? 'White' : 'Black') + ' to move'}
+              {legalFrom}
+              {onmove}
+              onflip={() => (orientation = other(orientation))}
+            />
+            {:else if settings.view3d}
+            <div class="preview"><small>Raising the realm…</small></div>
+            {:else}
             <Board
               {fen}
               {orientation}
@@ -477,6 +530,7 @@
               {legalFrom}
               {onmove}
             />
+            {/if}
             {#if cry}{#key cry.key}<div class="cry">{cry.text}</div>{/key}{/if}
           </div>
           {@render bar(orientation)}
@@ -496,9 +550,10 @@
             {:else}
               <button onclick={begin}>↻ Again</button>
             {/if}
+            <button onclick={() => (settings.view3d = !settings.view3d)} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
             {#if focus}
               <button onclick={() => (focus = false)} title="Leave full view (Esc)">✕ Exit</button>
-            {:else}
+            {:else if !settings.view3d}
               <button onclick={() => (focus = true)} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
             {/if}
           </div>
@@ -584,12 +639,6 @@
 
 <style>
   .heresy {
-    --bg1: #070a08; --bg2: #132019; --bg3: #2c4634;
-    --ink: #e4eee2; --muted: #93a896; --accent: #8fdc6a; --accent-ink: #0b1a07;
-    --panel: rgba(12, 20, 15, 0.7); --panel-border: rgba(143, 220, 106, 0.22);
-    --light: #b8c3a6; --dark: #4b5c46; --coord-light: #4b5c46; --coord-dark: #b8c3a6;
-    --hl: rgba(143, 220, 106, 0.5); --last: rgba(205, 232, 90, 0.4); --check: rgba(255, 60, 60, 0.8);
-    --glow: rgba(143, 220, 106, 0.35);
     position: fixed;
     inset: 0;
     z-index: 20;
@@ -597,14 +646,6 @@
     color: var(--ink);
     background: radial-gradient(ellipse at 50% 0%, var(--bg3), var(--bg2) 40%, var(--bg1) 85%);
     padding: 0 16px 2rem;
-  }
-  .heresy.demonic {
-    --bg1: #080102; --bg2: #250407; --bg3: #66090f;
-    --ink: #ffe7e2; --muted: #c99a92; --accent: #ff4a3d; --accent-ink: #1a0202;
-    --panel: rgba(24, 4, 6, 0.72); --panel-border: rgba(255, 70, 60, 0.26);
-    --light: #caa69b; --dark: #5c1b1e; --coord-light: #5c1b1e; --coord-dark: #caa69b;
-    --hl: rgba(255, 70, 50, 0.55); --last: rgba(255, 150, 60, 0.42); --check: rgba(255, 30, 30, 0.9);
-    --glow: rgba(255, 40, 40, 0.45);
   }
   .mist {
     position: fixed;
