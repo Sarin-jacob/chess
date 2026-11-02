@@ -4,13 +4,16 @@
   import { randomName } from '../names';
   import { settings } from '../settings.svelte';
 
-  const toggles: { key: 'sound' | 'haptics' | 'particles' | 'coords' | 'outlines' | 'useStun' | 'view3d'; label: string; hint: string }[] = [
+  const toggles: { key: 'sound' | 'haptics' | 'particles' | 'coords' | 'outlines' | 'useStun' | 'view3d' | 'keepAwake' | 'evalBar' | 'glossary'; label: string; hint: string }[] = [
     { key: 'sound', label: 'Sound', hint: 'Wood knocks and temple bells' },
     { key: 'haptics', label: 'Haptics', hint: 'Vibrate on moves (supported phones)' },
     { key: 'particles', label: 'Weather', hint: 'Snow, embers, petals and friends' },
     { key: 'view3d', label: 'Immersive 3D view', hint: 'Realm-carved 3D pieces with fixed camera angles (uses more battery)' },
     { key: 'coords', label: 'Coordinates', hint: 'Files and ranks on the board' },
     { key: 'outlines', label: 'Piece outlines', hint: 'A contrasting edge so pieces stand out on any square' },
+    { key: 'evalBar', label: 'Advantage bar', hint: 'Who is ahead, as the engine sees it, in pawns' },
+    { key: 'glossary', label: 'Glossary in reviews', hint: 'Explain chess terms, with links to read more' },
+    { key: 'keepAwake', label: 'Keep screen awake', hint: 'Stops the phone dimming mid-match' },
     { key: 'useStun', label: 'Public STUN for LAN', hint: 'Helps devices find each other; needs internet' },
   ];
 </script>

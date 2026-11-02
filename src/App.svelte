@@ -2,6 +2,7 @@
   import { onMount, type Component } from 'svelte';
   import Board from './lib/Board.svelte';
   import { lastUnfinished } from './lib/db';
+  import EvalBar from './lib/EvalBar.svelte';
   import { LEVEL_NAMES } from './lib/engine';
   import { game, type Color } from './lib/game.svelte';
   import ArchivePanel from './lib/panels/ArchivePanel.svelte';
@@ -10,6 +11,8 @@
   import RealmPanel from './lib/panels/RealmPanel.svelte';
   import SettingsPanel from './lib/panels/SettingsPanel.svelte';
   import { pieceImages } from './lib/pieceSets';
+  import { review } from './lib/review.svelte';
+  import { enterFullscreen, exitFullscreen, keepAwake, onFullscreenExit } from './lib/screen';
   import Scenery from './lib/Scenery.svelte';
   import { settings } from './lib/settings.svelte';
 
@@ -36,6 +39,19 @@
       .then((m) => { Board3D = m.default; load3d = 'idle'; })
       .catch((e) => { console.warn('3D view failed to load', e); load3d = 'failed'; });
   });
+
+  $effect(() => keepAwake(settings.keepAwake && game.active && !game.over));
+
+  // Full view for the flat board: the stage fills the screen and the page underneath can't scroll.
+  let focus = $state(false);
+  $effect(() => {
+    if (!focus) return;
+    enterFullscreen();
+    document.documentElement.classList.add('locked');
+    const off = onFullscreenExit(() => (focus = false));
+    return () => { off(); exitFullscreen(); document.documentElement.classList.remove('locked'); };
+  });
+  $effect(() => { if (settings.view3d) focus = false; });
 
   let intro = $state<{ key: number; name: string; hanzi: string; meaning: string; season: string } | null>(null);
 
@@ -143,6 +159,8 @@
 
   function onkey(e: KeyboardEvent) {
     if ((e.target as HTMLElement).closest('input, textarea')) return;
+    if (e.key === 'Escape' && focus) focus = false;
+    else
     if (e.key === 'ArrowLeft') game.step(-1);
     else if (e.key === 'ArrowRight') game.step(1);
     else if (e.key === 'ArrowUp') game.step('start');
@@ -173,7 +191,7 @@
   </header>
 
   <main>
-    <div class="stage">
+    <div class="stage" class:focus>
       {#snippet bar(c: Color)}
         {@const caps = captures.by[c]}
         {@const adv = c === 'w' ? captures.diff : -captures.diff}
@@ -198,6 +216,8 @@
       {/snippet}
 
       {@render bar(top)}
+      <div class="board-row" class:with-bar={settings.evalBar}>
+      {#if settings.evalBar}<EvalBar fen={game.shownFen} orientation={game.orientation} result={game.viewPly === null ? game.result : '*'} />{/if}
       <div class="board-wrap">
         {#if settings.view3d && Board3D}
           <Board3D
@@ -243,6 +263,7 @@
           <button class="live-pill" onclick={() => game.step('end')}>Reviewing move {game.viewPly} · back to live ↦</button>
         {/if}
       </div>
+      </div>
       {@render bar(bottom)}
 
       {#if replyNote}
@@ -260,6 +281,11 @@
           {#if game.rules.hints}<button onclick={() => game.askHint()} disabled={!game.movable}>✦ Hint</button>{/if}
         {/if}
         {#if game.canFlip}<button onclick={() => game.flip()}>⇅ Flip</button>{/if}
+        {#if focus}
+          <button onclick={() => (focus = false)} title="Leave full view (Esc)">✕ Exit</button>
+        {:else if !settings.view3d}
+          <button onclick={() => (focus = true)} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
+        {/if}
         <button onclick={() => (settings.view3d = !settings.view3d)} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view of the realm'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
         {#if !game.active}
           <!-- Draw and resign only make sense mid-match. -->
@@ -312,7 +338,7 @@
         <button class="primary" onclick={newMatch} disabled={game.mode === 'lan' && (game.rematchOffer === 'sent' || game.linkState !== 'open')}>
           {game.mode === 'lan' ? (game.rematchOffer === 'received' ? 'Accept rematch' : game.rematchOffer === 'sent' ? 'Rematch offered' : 'Offer rematch') : 'Next match'}
         </button>
-        <button onclick={() => { dismissed = game.id + game.result; tab = 'moves'; }}>Review</button>
+        <button onclick={() => { dismissed = game.id + game.result; tab = 'moves'; if (game.history.length >= 2) review.start(game.id + ':' + game.history.length, game.history, game.you, game.result); }}>Review</button>
       </div>
     </div>
   </div>
@@ -386,6 +412,24 @@
     justify-self: center;
   }
   .board-wrap { position: relative; }
+  .board-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .board-row.with-bar { grid-template-columns: 14px minmax(0, 1fr); gap: 6px; }
+  .stage.focus {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    max-width: none;
+    min-width: 0;
+    align-content: center;
+    justify-content: center;
+    /* Board as large as fits under the bars and buttons. */
+    grid-template-columns: min(100vw - 16px, 100dvh - 150px);
+    padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+    background: radial-gradient(ellipse at 50% 35%, var(--bg3), var(--bg2) 45%, var(--bg1));
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+  .stage.focus .idle-tip, .stage.focus .reply-note { display: none; }
   .loading3d {
     aspect-ratio: 1;
     display: grid;

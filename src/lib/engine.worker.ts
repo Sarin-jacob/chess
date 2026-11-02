@@ -16,7 +16,9 @@ interface Engine {
   _turn: 'w' | 'b';
 }
 
-export interface EngineRequest { id: number; fen: string; level: number }
+/** `depth` and `ms` override the level's search, for full-strength analysis. */
+export interface EngineRequest { id: number; fen: string; level: number; depth?: number; ms?: number }
+/** `score` is in centipawns for the side to move; `from` is empty when there is no legal move. */
 export interface EngineResponse { id: number; from: string; to: string; promotion?: string; score: number; depth: number; nodes: number }
 
 const VALUE: Record<string, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
@@ -117,10 +119,12 @@ function search(c: Engine, depth: number, alpha: number, beta: number, ply: numb
   return alpha;
 }
 
-function think(fen: string, level: number): Omit<EngineResponse, 'id'> {
-  const cfg = LEVELS[Math.min(8, Math.max(1, level))];
+function think(fen: string, level: number, depth?: number, ms?: number): Omit<EngineResponse, 'id'> {
+  const base = LEVELS[Math.min(8, Math.max(1, level))];
+  const cfg = depth ? { depth, ms: ms ?? base.ms, noise: 0, quiesce: true } : base;
   const c = new Chess(fen) as unknown as Engine;
   const root = c._moves({ legal: true });
+  if (!root.length) return { from: '', to: '', score: c.isCheck() ? -MATE : 0, depth: 0, nodes: 0 };
   nodes = 0;
   stopped = false;
   deadline = performance.now() + cfg.ms;
@@ -161,7 +165,7 @@ function think(fen: string, level: number): Omit<EngineResponse, 'id'> {
 }
 
 self.onmessage = (e: MessageEvent<EngineRequest>) => {
-  const { id, fen, level } = e.data;
-  const res = think(fen, level);
+  const { id, fen, level, depth, ms } = e.data;
+  const res = think(fen, level, depth, ms);
   (self as DedicatedWorkerGlobalScope).postMessage({ id, ...res } satisfies EngineResponse);
 };

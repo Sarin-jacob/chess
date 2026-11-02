@@ -3,6 +3,7 @@
   import { onMount, type Snippet } from 'svelte';
   import { pieceImages } from './pieceSets';
   import type { Realm } from './realms';
+  import { enterFullscreen, exitFullscreen, onFullscreenExit } from './screen';
   import { settings } from './settings.svelte';
   import { ChessScene, VIEWS } from './three/scene3d';
 
@@ -30,6 +31,13 @@
   let scene = $state<ChessScene | null>(null);
   let failed = $state(false);
   let full = $state(false);
+  // Full view also takes the browser full screen where it can, so swipes can't scroll the page.
+  $effect(() => {
+    if (!full) return;
+    enterFullscreen();
+    const off = onFullscreenExit(() => (full = false));
+    return () => { off(); exitFullscreen(); };
+  });
   let selected = $state<string | null>(null);
   let dests = $state<Move[]>([]);
   let promo = $state<{ from: string; to: string; color: Color } | null>(null);

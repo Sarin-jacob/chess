@@ -83,3 +83,6 @@ h3 { font-family: 'Cinzel', serif; font-weight: 700; letter-spacing: 0.05em; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 3px; }
 * { scrollbar-width: thin; scrollbar-color: var(--panel-border) transparent; }
+
+/* Full view on the flat board: nothing behind it may scroll or bounce. */
+html.locked, html.locked body { overflow: hidden; overscroll-behavior: none; }

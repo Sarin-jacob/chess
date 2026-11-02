@@ -1,8 +1,10 @@
 <script lang="ts">
   import { game } from '../game.svelte';
   import { downloadPgn } from '../pgn';
+  import { review } from '../review.svelte';
+  import ReviewPanel from './ReviewPanel.svelte';
 
-  let list: HTMLOListElement;
+  let list = $state<HTMLOListElement>();
   let copied = $state(false);
 
   const pairs = $derived.by(() => {
@@ -21,6 +23,10 @@
     list?.querySelector('.cur')?.scrollIntoView({ block: 'nearest' });
   });
 
+  const key = $derived(game.id + ':' + game.history.length);
+  // Mid-match the review would whisper moves to you, so it waits until the game is over.
+  const canReview = $derived(game.history.length >= 2 && !(game.active && !game.over));
+
   async function copy() {
     try {
       await navigator.clipboard.writeText(game.pgn());
@@ -30,7 +36,15 @@
   }
 </script>
 
+{#if review.open && review.key === key}
+  <ReviewPanel />
+{:else}
 <section>
+  {#if canReview}
+    <button class="primary review" onclick={() => review.start(key, game.history, game.you, game.result)}>
+      <span class="hz">鑑</span> {review.key === key && review.status === 'done' ? 'Open the review' : 'Review with the Elder'}
+    </button>
+  {/if}
   <ol class="moves" bind:this={list}>
     {#each pairs as p}
       <li>
@@ -55,6 +69,7 @@
     <button onclick={() => downloadPgn(game.pgn(), game.id)}>Download PGN</button>
   </div>
 </section>
+{/if}
 
 <style>
   section { display: grid; gap: 0.6rem; }
@@ -77,5 +92,7 @@
   .moves .empty, .moves .result { display: block; padding: 0.6rem; color: var(--muted); text-align: center; }
   .moves .result { font-weight: 700; color: var(--ink); }
   .nav, .row { display: flex; gap: 0.4rem; }
+  .review { display: flex; align-items: center; justify-content: center; gap: 0.4rem; }
+  .review .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1.2rem; line-height: 1; }
   .nav button, .row button { flex: 1; }
 </style>

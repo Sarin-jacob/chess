@@ -13,6 +13,12 @@ export interface SettingsData {
   outlines: boolean;
   /** Piece look, shared by the 2D and 3D boards. */
   pieceSet: PieceSetId;
+  /** Hold the screen on while a match is running. */
+  keepAwake: boolean;
+  /** Advantage bar with the engine's score, in pawns. */
+  evalBar: boolean;
+  /** Explain chess terms in reviews, with links to references. */
+  glossary: boolean;
   level: number;
   name: string;
   /** True while the name is one we generated rather than one the player typed. */
@@ -34,6 +40,9 @@ const DEFAULTS: SettingsData = {
   coords: true,
   outlines: true,
   pieceSet: 'staunton',
+  keepAwake: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
+  evalBar: false,
+  glossary: true,
   level: 3,
   name: '',
   nameAuto: true,
