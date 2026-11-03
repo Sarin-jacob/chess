@@ -2,6 +2,7 @@
   "name": "Chess of the Nine Peaks",
   "short_name": "Nine Peaks",
   "description": "Offline-first chess across seven murim realms.",
+  "id": "/chess/nine-peaks",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
