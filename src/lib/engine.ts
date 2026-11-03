@@ -48,11 +48,17 @@ export function analyse(fen: string, opts: { depth: number; ms: number; mate?: n
   });
 }
 
-/** Stop an analysis channel; its pending requests never resolve. */
+/** Stop an analysis channel (and its numbered lanes, "channel:1"…); pending requests never resolve. */
 export function stopAnalysis(channel: string) {
-  analysts.get(channel)?.worker.terminate();
-  analysts.delete(channel);
+  for (const [name, a] of analysts) {
+    if (name !== channel && !name.startsWith(channel + ':')) continue;
+    a.worker.terminate();
+    analysts.delete(name);
+  }
 }
+
+/** How many analysis workers a review may run side by side on this device. */
+export const lanes = () => Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
 
 /** Mate scores sit near ±MATE; this turns a score into "M3" style or pawns. */
 export function scoreText(cp: number): string {

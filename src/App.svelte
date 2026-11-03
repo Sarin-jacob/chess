@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, tick, untrack, type Component } from 'svelte';
+  import { Chess } from 'chess.js';
   import Board from './lib/Board.svelte';
+  import { cultivation } from './lib/cultivation.svelte';
   import { lastUnfinished } from './lib/db';
   import EvalBar from './lib/EvalBar.svelte';
   import { LEVEL_NAMES } from './lib/engine';
@@ -16,6 +18,9 @@
   import { enterFullscreen, exitFullscreen, keepAwake, onFullscreenExit } from './lib/screen';
   import Scenery from './lib/Scenery.svelte';
   import { settings } from './lib/settings.svelte';
+  import TrialCard from './lib/TrialCard.svelte';
+  import { trials } from './lib/trials.svelte';
+  import { REALMS } from './lib/realms';
   import Veil from './lib/Veil.svelte';
 
   type Tab = 'play' | 'moves' | 'archive' | 'realm' | 'settings';
@@ -83,10 +88,42 @@
   }
 
   // A match just began (or was opened): the gate slides open and the board comes into view.
+  /** The king in check on a board position, if any. */
+  function checkOf(fen: string): string | null {
+    const c = new Chess(fen);
+    if (!c.isCheck()) return null;
+    for (const row of c.board()) for (const p of row) if (p && p.type === 'k' && p.color === c.turn()) return p.square;
+    return null;
+  }
+
+  type Arrow = { from: string; to: string; color: string };
+  // What the board shows: a heart demon trial, a "find it yourself" try in the walk, or the game.
+  const view = $derived.by(() => {
+    const t = trials.active;
+    if (t)
+      return {
+        fen: t.fen, movable: t.status === 'move' ? (t.fen.split(' ')[1] as Color) : null, last: t.lastMove, arrows: t.arrows as Arrow[], check: checkOf(t.fen), hint: null,
+        legal: (sq: string) => trials.legalFrom(sq), move: (f: string, to: string, p?: string) => (trials.attempt(f, to, p), true),
+      };
+    const r = review.retry;
+    if (r) {
+      const fen = r.after ?? r.fen;
+      return {
+        fen, movable: r.after ? null : (fen.split(' ')[1] as Color), last: r.move, arrows: [] as Arrow[], check: checkOf(fen), hint: null,
+        legal: (sq: string) => review.retryLegal(sq), move: (f: string, to: string, p?: string) => (review.attempt(f, to, p), true),
+      };
+    }
+    return {
+      fen: game.shownFen, movable: game.movable, last: game.shownMove, arrows: walkArrows, check: game.inCheckSquare(), hint: game.hint,
+      legal: (sq: string) => game.legalFrom(sq), move: (f: string, to: string, p?: string) => game.tryMove(f, to, p),
+    };
+  });
+
+  // Any new match ends a trial or a walk that was on the board.
   let seenGame = '';
   $effect(() => {
     const id = game.active ? game.id : '';
-    if (id && id !== seenGame && ready) untrack(showBoard);
+    if (id && id !== seenGame && ready) untrack(() => { trials.leave(); showBoard(); });
     seenGame = id;
   });
 
@@ -101,7 +138,7 @@
     const t = setTimeout(() => (veilUp = false), 1000);
     return () => clearTimeout(t);
   });
-  const veiled = $derived(!game.active || (game.mode === 'lan' && game.linkState !== 'open' && !game.history.length && !game.over));
+  const veiled = $derived(!trials.active && (!game.active || (game.mode === 'lan' && game.linkState !== 'open' && !game.history.length && !game.over)));
 
   /** From the end of the walk to the Elder's advice in the panel. */
   async function counsel() {
@@ -123,6 +160,30 @@
     if (review.walking && review.key !== game.id + ':' + game.history.length) untrack(() => review.endWalk());
   });
   $effect(() => { if (review.walking) untrack(showBoard); });
+  $effect(() => { if (trials.active?.demon.id) untrack(() => { review.endWalk(); showBoard(); }); });
+
+  // A game against the sect moves your cultivation once, when it ends while being played here
+  // (opening an old finished game from the archive doesn't count).
+  let inPlay = '';
+  $effect(() => { if (game.active && !game.over && !game.study) inPlay = game.id; });
+  $effect(() => {
+    if (!game.over || game.mode !== 'ai' || !game.you || game.study || inPlay !== game.id) return;
+    const won = game.youWon();
+    const id = game.id;
+    const level = game.level;
+    untrack(() => cultivation.record(id, level, won === true ? 1 : won === false ? 0 : 0.5));
+  });
+  const gain = $derived(cultivation.last?.gameId === game.id ? cultivation.last : null);
+
+  /** On phones the realms list is far below, so tapping the realm steps through them instead. */
+  function realmTap() {
+    if (!matchMedia('(max-width: 960px)').matches) return (tab = 'realm');
+    const i = REALMS.findIndex((r) => r.id === game.realm.id);
+    const next = REALMS[(i + 1) % REALMS.length];
+    settings.realm = next.id;
+    game.setRealm(next.id);
+    game.persist();
+  }
 
   /** At a turning point: the move played, in its verdict's colour, and the Elder's choice in green. */
   const walkArrows = $derived.by(() => {
@@ -244,6 +305,7 @@
   function onkey(e: KeyboardEvent) {
     if ((e.target as HTMLElement).closest('input, textarea')) return;
     if (e.key === 'Escape' && focus) focus = false;
+    else if (trials.active || review.retry) return;
     else if (review.walking) {
       if (e.key === 'ArrowLeft') review.prev();
       else if (e.key === 'ArrowRight') review.next();
@@ -277,7 +339,7 @@
         <p>of the Nine Peaks</p>
       </div>
     </div>
-    <button class="realm-tag" onclick={() => (tab = 'realm')} title="{game.realm.hanzi} — {game.realm.meaning}. Change realm">
+    <button class="realm-tag" onclick={realmTap} title="{game.realm.hanzi} — {game.realm.meaning}. Change realm">
       <span class="hz">{game.realm.hanzi}</span>
       <span><b>{game.realm.name}</b><small>“{game.realm.meaning}” · {game.realm.season}{settings.realm === 'random' ? ' · wandering' : ''}</small></span>
     </button>
@@ -303,7 +365,7 @@
         </div>
       {/snippet}
 
-      {#snippet walk3d()}<ReviewWalk oncounsel={counsel} />{/snippet}
+      {#snippet walk3d()}{#if trials.active}<TrialCard />{:else}<ReviewWalk oncounsel={counsel} />{/if}{/snippet}
 
       {#snippet hud3d()}
         {@render bar(top)}
@@ -312,25 +374,25 @@
 
       {@render bar(top)}
       <div class="board-row" class:with-bar={settings.evalBar && !veiled}>
-      {#if settings.evalBar && !veiled}<EvalBar fen={game.shownFen} orientation={game.orientation} result={game.viewPly === null ? game.result : '*'} />{/if}
+      {#if settings.evalBar && !veiled && !trials.active && !review.retry}<EvalBar fen={game.shownFen} orientation={game.orientation} result={game.viewPly === null ? game.result : '*'} />{/if}
       <div class="board-wrap">
         {#if settings.view3d && Board3D}
           <Board3D
-            fen={game.shownFen}
+            fen={view.fen}
             orientation={game.orientation}
-            movable={game.movable}
-            lastMove={game.shownMove}
-            check={game.inCheckSquare()}
-            hint={game.hint}
-            arrows={walkArrows}
+            movable={view.movable}
+            lastMove={view.last}
+            check={view.check}
+            hint={view.hint}
+            arrows={view.arrows}
             coords={settings.coords}
             realm={game.realm}
             hud={hud3d}
-            footer={review.walking ? walk3d : undefined}
+            footer={trials.active || review.walking ? walk3d : undefined}
             bind:full={full3d}
             status={review.walking ? 'The Elder’s walk' : game.study ? 'Studying' : game.over ? verdict : game.thinking ? 'Opponent meditating…' : game.active ? (game.turn === 'w' ? 'White' : 'Black') + ' to move' : ''}
-            legalFrom={(sq: string) => game.legalFrom(sq)}
-            onmove={(f: string, t: string, p?: string) => game.tryMove(f, t, p)}
+            legalFrom={view.legal}
+            onmove={view.move}
             onflip={() => game.flip()}
           />
         {:else if settings.view3d}
@@ -344,18 +406,18 @@
           </div>
         {:else}
         <Board
-          fen={game.shownFen}
+          fen={view.fen}
           orientation={game.orientation}
-          movable={game.movable}
-          lastMove={game.shownMove}
-          check={game.inCheckSquare()}
-          hint={game.hint}
-          arrows={walkArrows}
+          movable={view.movable}
+          lastMove={view.last}
+          check={view.check}
+          hint={view.hint}
+          arrows={view.arrows}
           coords={settings.coords}
           outlines={settings.outlines}
           pieceSet={settings.pieceSet}
-          legalFrom={(sq) => game.legalFrom(sq)}
-          onmove={(f, t, p) => game.tryMove(f, t, p)}
+          legalFrom={view.legal}
+          onmove={view.move}
         />
         {/if}
         {#if game.viewPly !== null && !review.walking}
@@ -371,7 +433,9 @@
       {#if replyNote}
         <p class="reply-note" role="status">{replyNote} <button class="link" onclick={() => (replyNote = '')}>Dismiss</button></p>
       {/if}
-      {#if review.walking}
+      {#if trials.active}
+        <TrialCard />
+      {:else if review.walking}
         <ReviewWalk oncounsel={counsel} />
       {/if}
       <div class="controls">
@@ -434,6 +498,14 @@
       <span class="hz" title="{glyph[0]} — {glyph[1]}">{glyph[0]}</span>
       <h2>{verdict}</h2>
       <p>{game.result} · {game.reason}</p>
+      {#if gain}
+        {#if gain.to.index > gain.from.index}
+          <p class="breakthrough"><span class="hz">突破</span> Breakthrough! {gain.to.name}</p>
+        {:else if gain.to.index < gain.from.index}
+          <p class="fall">Your cultivation slips back to {gain.to.name}.</p>
+        {/if}
+        <p class="gain" title="Cultivation {gain.rating}"><span class="hz">修为</span> {gain.delta >= 0 ? '+' : ''}{gain.delta} · {gain.to.name}, {gain.to.layerName}</p>
+      {/if}
       {#if game.mode === 'lan' && game.rematchOffer === 'received'}<p class="offer">{game.opponent || 'Your rival'} wants a rematch.</p>{/if}
       <div class="row">
         <button class="primary" onclick={newMatch} disabled={game.mode === 'lan' && (game.rematchOffer === 'sent' || game.linkState !== 'open')}>
@@ -665,6 +737,11 @@
   .card h2 { margin: 0.3rem 0 0.2rem; font: 700 1.6rem 'Cinzel', serif; }
   .card p { margin: 0 0 1rem; color: var(--muted); text-transform: capitalize; }
   .card .offer { color: var(--accent); text-transform: none; }
+  .card .gain { text-transform: none; font-size: 0.88rem; margin-top: -0.6rem; }
+  .card .gain .hz, .card .breakthrough .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1.1rem; color: var(--accent); text-shadow: none; }
+  .card .breakthrough { text-transform: none; color: var(--accent); font: 700 1.05rem 'Cinzel', serif; text-shadow: 0 0 18px var(--glow); animation: rise 0.8s 0.3s both; }
+  .card .breakthrough .hz { font-size: 1.5rem; }
+  .card .fall { text-transform: none; font-size: 0.82rem; }
   .card .row { display: flex; gap: 0.5rem; justify-content: center; }
 
   .intro {

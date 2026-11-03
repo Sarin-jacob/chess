@@ -24,57 +24,83 @@
 
 <section class="walk" aria-label="Review walk-through">
   {#if review.status === 'running'}
-    <p class="line"><span class="hz">鉴</span> The Elder studies the game… {Math.round(review.progress * 100)}%</p>
+    <div class="studying">
+      <span class="hz">鉴</span>
+      <span class="grow">The Elder studies the game… {Math.round(review.progress * 100)}%{review.plies.length ? ' · walk on meanwhile' : ''}</span>
+      <button class="link" onclick={() => review.cancel()}>Stop</button>
+    </div>
     <div class="track"><span class="fill" style:width="{review.progress * 100}%"></span></div>
-    <div class="ctl"><button onclick={() => review.cancel()}>Stop</button></div>
-  {:else if at}
-    {@const v = VERDICTS[at.verdict]}
-    {@const m = game.history[at.ply - 1]}
-    <div class="note" style:--tone={v.color}>
-      <b>{label(at.ply)} {who(at.color)} played {at.san} <span>{v.symbol} {v.label}</span> <small>({v.plain})</small></b>
-      <p><Rich text={at.comment} /></p>
-      <p class="legend">
-        <i style:background={v.color}></i>played {m?.san}
-        {#if at.best}<i style:background="#3fae55"></i>stronger {at.best.san}{/if}
-      </p>
+  {/if}
+
+  {#if review.retry}
+    {@const r = review.retry}
+    {@const p = review.plies[r.ply - 1]}
+    <div class="note" style:--tone={r.result ? (r.result.kind === 'right' ? '#3fae55' : r.result.kind === 'close' ? '#e6c14f' : r.result.kind === 'wrong' ? '#e5484d' : 'var(--accent)') : 'var(--accent)'}>
+      {#if !r.result}
+        <b>⚔ Your move, {p.color === 'w' ? 'White' : 'Black'}.</b>
+        <p>{p.san} was played here. Find something stronger on the board.</p>
+      {:else}
+        <b>{r.result.kind === 'right' ? '✓ Found it' : r.result.kind === 'close' ? '≈ Close' : r.result.kind === 'wrong' ? '✗ Not quite' : '…'}</b>
+        <p>{r.result.text}</p>
+      {/if}
     </div>
-  {:else if ended}
-    <div class="note done">
-      <b>The walk is done.</b>
-      <p>Accuracy: White {Math.round(review.accuracy.w)}% · Black {Math.round(review.accuracy.b)}%. {review.stops.size ? `${review.stops.size} turning point${review.stops.size === 1 ? '' : 's'} along the way.` : 'Not a single turning point to dwell on.'}</p>
-      <button class="link" onclick={oncounsel}>Hear the Elder's counsel ↦</button>
+    <div class="ctl">
+      {#if r.result && r.result.kind !== 'right' && r.result.kind !== 'checking'}<button onclick={() => review.retryAgain()}>↺ Try again</button>{/if}
+      {#if r.result && r.result.kind !== 'checking'}<button onclick={() => { review.endRetry(); }}>Show the answer</button>{/if}
+      <button class="primary play" onclick={() => review.toggle()}>▶ Play on</button>
+      <button onclick={() => review.endRetry()} aria-label="Stop trying" title="Back to the walk">✕</button>
     </div>
-  {:else if played}
-    {@const v = VERDICTS[played.verdict]}
-    <p class="line">{label(played.ply)} {played.san} <span style:color={v.color}>{v.symbol} {v.label}</span></p>
-    {#if played.verdict === 'brilliant' || played.motifs.length || (played.verdict === 'book' && played.ply === review.opening.plies)}
-      <p class="said"><Rich text={played.comment} /></p>
-    {/if}
   {:else}
-    <p class="line">The opening position. {review.stops.size ? `The Elder will halt at ${review.stops.size} turning point${review.stops.size === 1 ? '' : 's'}.` : ''}</p>
-  {/if}
+    {#if at}
+      {@const v = VERDICTS[at.verdict]}
+      {@const m = game.history[at.ply - 1]}
+      <div class="note" style:--tone={v.color}>
+        <b>{label(at.ply)} {who(at.color)} played {at.san} <span>{v.symbol} {v.label}</span> <small>({v.plain})</small></b>
+        <p><Rich text={at.comment} /></p>
+        <p class="legend">
+          <i style:background={v.color}></i>played {m?.san}
+          {#if at.best}<i style:background="#3fae55"></i>stronger {at.best.san}{/if}
+          {#if at.best}<button class="link try" onclick={() => review.startRetry()}>⚔ Find it yourself</button>{/if}
+        </p>
+      </div>
+    {:else if ended}
+      <div class="note done">
+        <b>The walk is done.</b>
+        <p>Accuracy: White {Math.round(review.accuracy.w)}% · Black {Math.round(review.accuracy.b)}%. {review.stops.size ? `${review.stops.size} turning point${review.stops.size === 1 ? '' : 's'} along the way.` : 'Not a single turning point to dwell on.'}</p>
+        <button class="link" onclick={oncounsel}>Hear the Elder's counsel ↦</button>
+      </div>
+    {:else if played}
+      {@const v = VERDICTS[played.verdict]}
+      <p class="line">{label(played.ply)} {played.san} <span style:color={v.color}>{v.symbol} {v.label}</span></p>
+      {#if played.verdict === 'brilliant' || played.motifs.length || (played.verdict === 'book' && played.ply === review.opening.plies)}
+        <p class="said"><Rich text={played.comment} /></p>
+      {/if}
+    {:else if cur > 0}
+      <p class="line muted">The Elder hasn't reached this move yet…</p>
+    {:else}
+      <p class="line">The opening position. {review.status === 'done' && review.stops.size ? `The Elder will halt at ${review.stops.size} turning point${review.stops.size === 1 ? '' : 's'}.` : ''}</p>
+    {/if}
 
-  {#if review.status === 'done'}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="track seek" onclick={seek} title="Jump to a move">
-      <span class="fill" style:width="{(cur / Math.max(1, n)) * 100}%"></span>
-      {#each [...review.stops] as s}
-        <i style:left="{((s - 0.5) / Math.max(1, n)) * 100}%" style:background={VERDICTS[review.plies[s - 1].verdict].color}></i>
-      {/each}
+    {#if review.plies.length}
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="track seek" onclick={seek} title="Jump to a move">
+        <span class="fill" style:width="{(cur / Math.max(1, n)) * 100}%"></span>
+        {#each [...review.stops] as s}
+          <i style:left="{((s - 0.5) / Math.max(1, n)) * 100}%" style:background={VERDICTS[review.plies[s - 1].verdict].color}></i>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="ctl">
+      <button onclick={() => review.stepTo(0)} disabled={cur === 0} aria-label="First move" title="First move">⏮</button>
+      <button onclick={() => review.prev()} disabled={cur === 0} aria-label="Previous move" title="Previous move (←)">◀</button>
+      <button class="primary play" onclick={() => review.toggle()} title="Play or pause (space)">
+        {review.playing ? '⏸ Pause' : review.halted ? '▶ Play on' : ended ? '↺ Again' : '▶ Play'}
+      </button>
+      <button onclick={() => review.next()} disabled={cur >= n} aria-label="Next move" title="Next move (→)">▶</button>
+      <button onclick={() => review.skipToNextStop()} disabled={review.nextStop === null} aria-label="Next turning point" title="Next turning point">⏭</button>
+      <button onclick={() => review.endWalk()} aria-label="End the walk" title="End the walk">✕</button>
     </div>
-  {/if}
-
-  {#if review.status === 'done'}
-  <div class="ctl">
-    <button onclick={() => review.stepTo(0)} disabled={review.status !== 'done' || cur === 0} aria-label="First move" title="First move">⏮</button>
-    <button onclick={() => review.prev()} disabled={review.status !== 'done' || cur === 0} aria-label="Previous move" title="Previous move (←)">◀</button>
-    <button class="primary play" onclick={() => review.toggle()} disabled={review.status !== 'done'} title="Play or pause (space)">
-      {review.playing ? '⏸ Pause' : review.halted ? '▶ Play on' : ended ? '↺ Again' : '▶ Play'}
-    </button>
-    <button onclick={() => review.next()} disabled={review.status !== 'done' || cur >= n} aria-label="Next move" title="Next move (→)">▶</button>
-    <button onclick={() => review.skipToNextStop()} disabled={review.status !== 'done' || review.nextStop === null} aria-label="Next turning point" title="Next turning point">⏭</button>
-    <button onclick={() => review.endWalk()} aria-label="End the walk" title="End the walk">✕</button>
-  </div>
   {/if}
 </section>
 
@@ -90,6 +116,10 @@
   }
   .line { margin: 0; font-size: 0.88rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .line span { font-weight: 600; }
+  .muted { color: var(--muted); }
+  .studying { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: var(--muted); }
+  .studying .grow { flex: 1; }
+  .try { margin-left: auto; font-size: 0.8rem; }
   .said { margin: 0; font-size: 0.84rem; color: var(--muted); }
   .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1.2rem; line-height: 1; color: var(--accent); }
   .note { border-left: 3px solid var(--tone, var(--accent)); padding: 0.25rem 0.55rem; border-radius: 4px; background: color-mix(in srgb, var(--tone, var(--accent)) 10%, transparent); display: grid; gap: 0.25rem; justify-items: start; }

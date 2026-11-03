@@ -3,8 +3,10 @@
 // variant's goal (lose your pieces, land checks, march the king…).
 import { inCheck, kingSq, legalMoves, makeMove, outcome, RULES, type Pos, type Rules, type VariantId, type VMove } from './rules';
 
-export interface HeresyRequest { id: number; pos: Pos; variant: VariantId; level: number }
-export interface HeresyResponse { id: number; move: VMove | null }
+/** `ms` and `depth` override the level for full-strength analysis (the review). */
+export interface HeresyRequest { id: number; pos: Pos; variant: VariantId; level: number; ms?: number; depth?: number }
+/** `score` is for the side to move, ±MATE - plies for a forced win. */
+export interface HeresyResponse { id: number; move: VMove | null; score: number }
 
 const VALUE: Record<string, number> = { p: 100, n: 310, b: 330, r: 500, q: 900, k: 0 };
 const MATE = 100000;
@@ -64,11 +66,14 @@ function search(p: Pos, depth: number, alpha: number, beta: number, ply: number,
   return alpha;
 }
 
-function think(pos: Pos, variant: VariantId, level: number): VMove | null {
+function think(pos: Pos, variant: VariantId, level: number, ms?: number, depth?: number): { move: VMove | null; score: number } {
   const rules = RULES[variant];
-  const cfg = LEVELS[Math.min(4, Math.max(1, level)) - 1];
+  const base = LEVELS[Math.min(4, Math.max(1, level)) - 1];
+  const cfg = ms ? { depth: depth ?? 6, ms, noise: 0 } : base;
   const root = order(legalMoves(pos, rules));
-  if (!root.length) return null;
+  // A finished game (some variants end with moves still on the board) has nothing to search.
+  const end = outcome(pos, rules, root);
+  if (end || !root.length) return { move: null, score: !end || end.winner === null ? 0 : end.winner === pos.turn ? MATE : -MATE };
   deadline = performance.now() + cfg.ms;
   stopped = false;
   nodes = 0;
@@ -89,10 +94,11 @@ function think(pos: Pos, variant: VariantId, level: number): VMove | null {
   }
   const best = scored[0].s;
   const pool = scored.filter((x) => x.s >= best - cfg.noise * Math.random());
-  return pool[Math.floor(Math.random() * pool.length)].m;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  return { move: pick.m, score: pick.s };
 }
 
 self.onmessage = (e: MessageEvent<HeresyRequest>) => {
-  const { id, pos, variant, level } = e.data;
-  (self as DedicatedWorkerGlobalScope).postMessage({ id, move: think(pos, variant, level) } satisfies HeresyResponse);
+  const { id, pos, variant, level, ms, depth } = e.data;
+  (self as DedicatedWorkerGlobalScope).postMessage({ id, ...think(pos, variant, level, ms, depth) } satisfies HeresyResponse);
 };

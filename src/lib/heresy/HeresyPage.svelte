@@ -11,6 +11,8 @@
   import { enterFullscreen, exitFullscreen, keepAwake, onFullscreenExit } from '../screen';
   import { settings } from '../settings.svelte';
   import type { HeresyRequest, HeresyResponse } from './heresy.worker';
+  import HeresyWalk from './HeresyWalk.svelte';
+  import { hreview } from './hreview.svelte';
   import LanSetup from './LanSetup.svelte';
   import { pathById, PATHS, type Faction, type Path } from './paths';
   import { inCheck, kingSq, legalMoves, makeMove, ORTHODOX_BACK, other, outcome, RULES, san, shuffledBack, sqName, startPos, toFen, type Color, type Kind, type Outcome, type Pos, type VMove } from './rules';
@@ -274,7 +276,7 @@
     worker ??= new Worker(new URL('./heresy.worker.ts', import.meta.url), { type: 'module' });
     return worker;
   }
-  onDestroy(() => { worker?.terminate(); link?.close(); keepAwake(false); });
+  onDestroy(() => { worker?.terminate(); link?.close(); keepAwake(false); hreview.cancel(); });
 
   function choose(p: Path) {
     path = p;
@@ -283,6 +285,7 @@
   }
 
   function reset() {
+    hreview.cancel();
     worker?.terminate();
     worker = null;
     seq++;
@@ -416,6 +419,34 @@
 
   const checkSq = $derived(inCheck(pos, pos.turn, rules) ? sqName(kingSq(pos, pos.turn)) : null);
 
+  // While the Elder walks the game, the board shows the walk's position instead of the live one.
+  const walking = $derived(hreview.walking && hreview.positions.length === hist.length + 1);
+  const shown = $derived.by(() => {
+    if (!walking) return { fen, last: last ? { from: sqName(last.move.from), to: sqName(last.move.to) } : null, check: checkSq, movable, arrows: [] as { from: string; to: string; color: string }[] };
+    const p = hreview.positions[hreview.view];
+    const m = hreview.view > 0 ? hreview.moves[hreview.view - 1] : null;
+    return {
+      fen: toFen(p), last: m ? { from: sqName(m.from), to: sqName(m.to) } : null, movable: null,
+      check: inCheck(p, p.turn, rules) && kingSq(p, p.turn) >= 0 ? sqName(kingSq(p, p.turn)) : null, arrows: hreview.arrows,
+    };
+  });
+
+  function startReview() {
+    if (hist.length < 2 || !path) return;
+    shownResult = false;
+    hreview.start(hist, pos, path.id, mode === 'local' ? null : you);
+    hreview.walk();
+  }
+
+  function walkKeys(e: KeyboardEvent) {
+    if (!walking || (e.target as HTMLElement).closest('input, textarea')) return;
+    if (e.key === 'ArrowLeft') hreview.prev();
+    else if (e.key === 'ArrowRight') hreview.next();
+    else if (e.key === ' ' && !(e.target as HTMLElement).closest('button')) hreview.toggle();
+    else return;
+    e.preventDefault();
+  }
+
   const pairs = $derived.by(() => {
     const out: { n: number; w?: string; b?: string }[] = [];
     hist.forEach((h, i) => {
@@ -439,7 +470,7 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && focus) focus = false; }} />
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && focus) focus = false; else walkKeys(e); }} />
 
 <div class="heresy {palette}" style={cssVars}>
   <div class="mist" aria-hidden="true"></div>
@@ -502,6 +533,7 @@
               {/if}
             </div>
           {/snippet}
+          {#snippet walk3d()}<HeresyWalk />{/snippet}
           {#snippet hud()}
             {@render bar(top)}
             {@render bar(orientation)}
@@ -510,11 +542,13 @@
           <div class="board-wrap">
             {#if settings.view3d && Board3D}
             <Board3D
-              {fen}
+              fen={shown.fen}
               {orientation}
-              {movable}
-              lastMove={last ? { from: sqName(last.move.from), to: sqName(last.move.to) } : null}
-              check={checkSq}
+              movable={shown.movable}
+              lastMove={shown.last}
+              check={shown.check}
+              arrows={shown.arrows}
+              footer={walking ? walk3d : undefined}
               coords={settings.coords}
               realm={realm3d}
               {hud}
@@ -527,11 +561,12 @@
             <div class="preview"><small>Raising the realm…</small></div>
             {:else}
             <Board
-              {fen}
+              fen={shown.fen}
               {orientation}
-              {movable}
-              lastMove={last ? { from: sqName(last.move.from), to: sqName(last.move.to) } : null}
-              check={checkSq}
+              movable={shown.movable}
+              lastMove={shown.last}
+              check={shown.check}
+              arrows={shown.arrows}
               coords={settings.coords}
               outlines={settings.outlines}
               pieceSet={settings.pieceSet}
@@ -542,13 +577,15 @@
             {#if cry}{#key cry.key}<div class="cry">{cry.text}</div>{/key}{/if}
           </div>
           {@render bar(orientation)}
+          {#if walking}<HeresyWalk />{/if}
           {#if mode === 'lan' && (linkState === 'closed' || linkState === 'failed')}
             <p class="lost">The link to {opponent || 'your rival'} broke. Moves made from here won't reach them.</p>
           {:else if mode === 'lan' && again === 'received'}
             <p class="lost">{opponent || 'Your rival'} wants another duel.</p>
           {/if}
           <div class="controls">
-            {#if mode !== 'lan'}<button onclick={undo} disabled={!hist.length || thinking}>↶ Undo</button>{/if}
+            {#if result && hist.length >= 2 && !walking}<button onclick={startReview} title="The Elder's review">鉴 Review</button>{/if}
+            {#if mode !== 'lan'}<button onclick={undo} disabled={!hist.length || thinking || walking}>↶ Undo</button>{/if}
             <button onclick={() => (orientation = other(orientation))}>⇅ Flip</button>
             <button onclick={resign} disabled={!!result || !hist.length}>⚑ Resign</button>
             {#if mode === 'lan'}
@@ -638,6 +675,7 @@
               {mode === 'lan' ? (again === 'received' ? 'Accept another' : again === 'sent' ? 'Offered' : 'Offer another') : 'Again'}
             </button>
           {/if}
+          {#if hist.length >= 2}<button onclick={startReview}>鉴 Review</button>{/if}
           <button onclick={() => (shownResult = false)}>Look at the board</button>
         </div>
       </div>

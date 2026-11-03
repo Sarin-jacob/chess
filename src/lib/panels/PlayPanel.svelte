@@ -5,6 +5,7 @@
   import { game } from '../game.svelte';
   import { decodeSignal, isReply, type Rival } from '../lan';
   import QrScanner from '../QrScanner.svelte';
+  import { cultivation, SECT_STRENGTH } from '../cultivation.svelte';
   import { settings } from '../settings.svelte';
 
   let { joinCode = '' }: { joinCode?: string } = $props();
@@ -202,6 +203,13 @@
       <span>Opponent <b>{LEVEL_NAMES[settings.level - 1]}</b> <em>· {settings.level}/8</em></span>
       <input type="range" min="1" max="8" bind:value={settings.level} />
     </label>
+    {@const stage = cultivation.stage}
+    {@const gap = SECT_STRENGTH[settings.level - 1] - cultivation.rating}
+    <p class="cult">
+      <span class="hz">{stage.hz}</span> You: {stage.name}, {stage.layerName}.
+      {gap > 150 ? 'A stronger foe: a win would advance you greatly.' : gap < -150 ? 'A weaker foe: little to gain, much to lose.' : 'An even match.'}
+      {#if cultivation.fairLevel !== settings.level}<button class="link" onclick={() => (settings.level = cultivation.fairLevel)}>Fairest: {LEVEL_NAMES[cultivation.fairLevel - 1]}</button>{/if}
+    </p>
   {/if}
 
   {#if !(mode === 'lan' && lanRole === 'join')}
@@ -333,6 +341,9 @@
   .level { display: grid; gap: 0.3rem; font-size: 0.9rem; }
   .level em { color: var(--muted); font-style: normal; }
   .level input { width: 100%; accent-color: var(--accent); }
+  .cult { margin: -0.3rem 0 0; font-size: 0.78rem; color: var(--muted); }
+  .cult .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1rem; color: var(--accent); }
+  .cult .link { all: unset; cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
   textarea {
     width: 100%;
     font: 0.75rem/1.3 ui-monospace, monospace;

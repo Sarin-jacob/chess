@@ -5,9 +5,12 @@
 // move played and the Elder's choice drawn as arrows.
 import { Chess, type Move } from 'chess.js';
 import { grade, isBad, lineText, mateIn, moveAccuracy, motifs, type Motif, type Verdict } from './analysis';
-import { analyse, isMate, scoreText, stopAnalysis } from './engine';
+import { judge } from './drill';
+import { TERMS } from './glossary';
+import { analyse, isMate, lanes, scoreText, stopAnalysis } from './engine';
 import { game } from './game.svelte';
 import { openingOf } from './openings';
+import { trials } from './trials.svelte';
 import type { EngineResponse } from './search';
 
 export type { Verdict };
@@ -42,8 +45,9 @@ export interface PlyReview {
   comment: string;
   /** What the move did: fork, pin, mate pattern… (ids from analysis.ts). */
   motifs: string[];
-  /** The forced mate that was missed, as moves. */
+  /** The forced mate that was missed, as moves, and as UCI. */
   missLine?: string;
+  lineUci?: string[];
 }
 
 export interface Tip { color: Color; tone: 'warn' | 'good' | 'info'; title: string; text: string }
@@ -76,6 +80,8 @@ class Review {
   evals = $state.raw<number[]>([]);
   accuracy = $state<Record<Color, number>>({ w: 0, b: 0 });
   tips = $state.raw<Tip[]>([]);
+  /** Heart demons this review added to the trials. */
+  newDemons = $state(0);
   /** The named opening and how many moves of it came straight from the book. */
   opening = $state<{ name: string | null; plies: number }>({ name: null, plies: 0 });
   /** The side reviewed for, or null when both sides are (pass-and-play, imports). */
@@ -87,6 +93,11 @@ class Review {
   playing = $state(false);
   /** Halted on the position before this ply, to show what should have been played. */
   halt = $state<number | null>(null);
+  /**
+   * Finding the better move yourself at a turning point: the position, then the move tried
+   * (`after` is the position it leads to) and the Elder's judgement of it.
+   */
+  retry = $state<{ ply: number; fen: string; after: string | null; move: { from: string; to: string } | null; result: null | { kind: 'checking' | 'right' | 'close' | 'wrong'; text: string } } | null>(null);
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   /**
@@ -109,17 +120,32 @@ class Review {
     this.plies = [];
     this.status = 'running';
     this.progress = 0;
+    this.evals = [];
+    this.newDemons = 0;
+    const header = (k: string) => game.pgn().match(new RegExp(`\\[${k} "([^"]*)"\\]`))?.[1];
+    const meta = { id: key.split(':')[0], title: `${header('White') ?? 'White'} vs ${header('Black') ?? 'Black'}`, date: game.startedAt };
+    this.opening = openingOf(history);
     const fens = [history[0].before, ...history.map((m) => m.after)];
-    const scores: Awaited<ReturnType<typeof analyse>>[] = [];
-    for (const f of fens) {
-      // The mate hunt finds forced mates by checks a few moves past the search's horizon.
-      const r = await analyse(f, { depth: 4, ms: 500, mate: 4 }, 'review');
-      if (run !== this.run) return;
-      scores.push(r);
-      this.progress = scores.length / fens.length;
-    }
-    this.evals = scores.map((s, i) => (fens[i].split(' ')[1] === 'w' ? s.score : -s.score));
-    this.grade(history, fens, scores);
+    const scores: EngineResponse[] = [];
+    // Positions are shared out to several workers; each move is graded as soon as the
+    // positions on both sides of it are in, so the walk can start before the end.
+    let next = 0;
+    let done = 0;
+    const lane = async (n: number) => {
+      while (next < fens.length) {
+        const i = next++;
+        // The mate hunt finds forced mates by checks a few moves past the search's horizon.
+        const r = await analyse(fens[i], { depth: 12, ms: 500, mate: 4 }, `review:${n}`);
+        if (run !== this.run) return;
+        scores[i] = r;
+        this.progress = ++done / fens.length;
+        this.gradeReady(history, fens, scores);
+      }
+    };
+    await Promise.all(Array.from({ length: lanes() }, (_, n) => lane(n)));
+    if (run !== this.run) return;
+    stopAnalysis('review');
+    this.newDemons = this.summonDemons(fens, meta);
     this.counsel(history, fens, you, result);
     this.status = 'done';
   }
@@ -160,9 +186,10 @@ class Review {
 
   private tick() {
     if (!this.walking || !this.playing) return;
-    if (this.status !== 'done') return this.later(400);
     const n = game.history.length;
     const next = this.cur + 1;
+    // Still being analysed: wait for the Elder to catch up.
+    if (next <= n && this.plies.length < next) return this.later(300);
     if (next > n) {
       this.playing = false;
       return;
@@ -185,8 +212,55 @@ class Review {
     clearTimeout(this.timer);
   }
 
+  // ---------- finding the better move yourself ----------
+
+  /** At a turning point, hide the answer and let the board be played from the position before it. */
+  startRetry() {
+    if (!this.halted) return;
+    const p = this.plies[this.halt! - 1];
+    if (!p?.best) return;
+    this.pause();
+    this.retry = { ply: p.ply, fen: game.history[p.ply - 1].before, after: null, move: null, result: null };
+  }
+
+  retryLegal(square: string) {
+    const r = this.retry;
+    if (!r || r.after) return [];
+    return new Chess(r.fen).moves({ square: square as never, verbose: true });
+  }
+
+  /** Judge a move tried at a turning point: the Elder's own, or one about as good, or not. */
+  async attempt(from: string, to: string, promotion?: string) {
+    const r = this.retry;
+    if (!r || r.after) return false;
+    const c = new Chess(r.fen);
+    let m: Move;
+    try {
+      m = c.move({ from, to, promotion: promotion ?? 'q' });
+    } catch {
+      return false;
+    }
+    const p = this.plies[r.ply - 1];
+    this.retry = { ...r, after: c.fen(), move: { from: m.from, to: m.to }, result: { kind: 'checking', text: 'The Elder weighs your move…' } };
+    const j = await judge(r.fen, m, p.best!, p.before, 'retry');
+    if (this.retry?.ply !== r.ply || this.retry.after !== c.fen()) return true;
+    this.retry = { ...this.retry, result: { kind: j.kind, text: j.kind === 'wrong' ? j.text + ' Look again.' : j.text } };
+    return true;
+  }
+
+  /** Put the position back for another try. */
+  retryAgain() {
+    if (this.retry) this.retry = { ...this.retry, after: null, move: null, result: null };
+  }
+
+  endRetry() {
+    this.retry = null;
+    stopAnalysis('retry');
+  }
+
   /** Play on from here; from the end it starts over. */
   toggle() {
+    this.endRetry();
     if (this.playing) return this.pause();
     if (this.cur >= game.history.length) {
       game.viewPly = 0;
@@ -199,6 +273,7 @@ class Review {
   /** Stop on the position before `ply`, showing what was played and what was better. */
   haltAt(ply: number) {
     this.pause();
+    this.endRetry();
     this.walking = true;
     game.hint = null;
     game.viewPly = ply - 1;
@@ -208,6 +283,7 @@ class Review {
   /** Go to a position by hand; it halts if the next move is a turning point. */
   stepTo(ply: number) {
     this.pause();
+    this.endRetry();
     const n = game.history.length;
     const to = Math.max(0, Math.min(n, ply));
     game.hint = null;
@@ -237,6 +313,7 @@ class Review {
 
   endWalk() {
     this.pause();
+    this.endRetry();
     if (!this.walking) return;
     this.walking = false;
     this.halt = null;
@@ -244,11 +321,13 @@ class Review {
     game.viewPly = null;
   }
 
-  private grade(history: Move[], fens: string[], scores: EngineResponse[]) {
-    const out: PlyReview[] = [];
-    const acc: Record<Color, number[]> = { w: [], b: [] };
-    this.opening = openingOf(history);
-    history.forEach((m, i) => {
+  /** Grade every move whose positions are both analysed, in order, from where it left off. */
+  private gradeReady(history: Move[], fens: string[], scores: EngineResponse[]) {
+    const out = [...this.plies];
+    const evals = [...this.evals];
+    for (let i = evals.length; i < fens.length && scores[i]; i++) evals.push(fens[i].split(' ')[1] === 'w' ? scores[i].score : -scores[i].score);
+    for (let i = out.length; i < history.length && scores[i] && scores[i + 1]; i++) {
+      const m = history[i];
       const best = scores[i];
       const reply = scores[i + 1];
       const before = best.score;
@@ -279,17 +358,22 @@ class Review {
         best: bestSan && verdict !== 'book' ? { san: bestSan, from: best.from, to: best.to } : null,
         accuracy: moveAccuracy(g.loss),
         motifs: found.map((f) => f.id),
+        lineUci: missLine ? best.line : undefined,
         missLine: missLine ? missLine.text + (missLine.mate ? `, a [[${missLine.mate.term}|${missLine.mate.label}]]` : '') : undefined,
         comment: this.comment(verdict, m, {
           before, after, bestSan, replySan, replyTakes, motifs: found, missLine, threat,
           opening: i < this.opening.plies ? openingOf(history.slice(0, i + 1)).name : null,
         }),
       });
-      acc[m.color].push(moveAccuracy(g.loss));
-    });
-    const mean = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
+    }
+    const mean = (c: Color) => {
+      const a = out.filter((p) => p.color === c).map((p) => p.accuracy);
+      return a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+    };
+    this.evals = evals;
+    if (out.length === this.plies.length) return;
     this.plies = out;
-    this.accuracy = { w: mean(acc.w), b: mean(acc.b) };
+    this.accuracy = { w: mean('w'), b: mean('b') };
   }
 
   private comment(
@@ -327,6 +411,65 @@ class Review {
         return `${grade}: ${scoreText(c.before)} → ${scoreText(c.after)}.${why}${better}`;
       }
     }
+  }
+
+  /**
+   * The game as PGN with the Elder's grades as symbols ($2 = ?, $4 = ?? …), notes as comments and
+   * [%eval] scores, which lichess and most chess apps show.
+   */
+  annotatedPgn(pgn: string, history: Move[]) {
+    const headers = pgn.split('\n').filter((l) => l.startsWith('[') && !/^\[(Annotator|Opening) /.test(l));
+    if (this.opening.name) headers.push(`[Opening "${this.opening.name}"]`);
+    headers.push('[Annotator "The Elder, Chess of the Nine Peaks"]');
+    const result = pgn.match(/\[Result "([^"]+)"\]/)?.[1] ?? '*';
+    const plain = (t: string) =>
+      t.replace(/\[\[(\w+)(?:\|([^\]]+))?\]\]/g, (_, term: string, shown?: string) => shown ?? TERMS[term]?.word.toLowerCase() ?? term).replace(/[{}]/g, '');
+    const NAG: Partial<Record<Verdict, string>> = { brilliant: ' $3', inaccuracy: ' $6', mistake: ' $2', miss: ' $2', blunder: ' $4', forced: ' $7' };
+    const evalText = (cp: number) => (isMate(cp) ? `#${cp > 0 ? '' : '-'}${mateIn(cp)}` : (cp / 100).toFixed(2));
+    const out: string[] = [];
+    let numbered = false;
+    history.forEach((m, i) => {
+      const p = this.plies[i];
+      const no = i % 2 === 0 ? `${i / 2 + 1}. ` : numbered ? `${Math.ceil(i / 2)}... ` : '';
+      const notes: string[] = [];
+      const ev = this.evals[i + 1];
+      // No eval once the mate is on the board.
+      if (ev !== undefined && !(isMate(ev) && mateIn(ev) === 0)) notes.push(`[%eval ${evalText(ev)}]`);
+      if (p) {
+        const lastBook = p.verdict === 'book' && p.ply === this.opening.plies;
+        if (isBad(p.verdict) || p.verdict === 'brilliant' || p.motifs.length || lastBook) notes.push(plain(p.comment));
+      }
+      out.push(`${no}${m.san}${p ? (NAG[p.verdict] ?? '') : ''}${notes.length ? ` { ${notes.join(' ')} }` : ''}`);
+      numbered = notes.length > 0;
+    });
+    out.push(result);
+    // Wrap the movetext at 80 columns, as PGN readers expect.
+    const lines: string[] = [];
+    let line = '';
+    for (const w of out.join(' ').split(' ')) {
+      if (line && line.length + w.length + 1 > 80) {
+        lines.push(line);
+        line = w;
+      } else line = line ? `${line} ${w}` : w;
+    }
+    if (line) lines.push(line);
+    return `${headers.join('\n')}\n\n${lines.join('\n')}\n`;
+  }
+
+  /** Your clear mistakes become heart demons, to be faced again as trials. */
+  private summonDemons(fens: string[], source: { id: string; title: string; date: number }) {
+    const found = this.plies
+      .filter((p) => p.best && ['miss', 'mistake', 'blunder'].includes(p.verdict) && (!this.you || p.color === this.you))
+      .map((p) => ({
+        fen: fens[p.ply - 1],
+        best: p.best!,
+        score: p.before,
+        line: p.lineUci,
+        label: isMate(p.before) && p.before > 0 ? `Find the mate in ${mateIn(p.before)}` : p.before >= 200 ? 'Find the winning blow' : 'Find the move that holds',
+        played: p.san,
+        game: { ...source, ply: p.ply },
+      }));
+    return trials.add(found);
   }
 
   private counsel(history: Move[], fens: string[], you: Color | null, result: string) {
@@ -402,6 +545,8 @@ class Review {
       if (overall >= 88 && !bad.length)
         tips.push({ color: c, tone: 'good', title: 'Clear mind, steady hands', text: `${Math.round(overall)}% [[accuracy]] with no mistakes. A disciplined game, worthy of the inner sect.` });
     }
+    if (this.newDemons)
+      tips.push({ color: you ?? 'w', tone: 'info', title: 'Heart demons stir', text: `${this.newDemons} ${this.newDemons === 1 ? 'moment' : 'moments'} from this game became heart demons. Face them in the Archive (卷) until each is slain.` });
     // How it ended, when it ended in a named mate.
     const last = this.plies.at(-1);
     const mate = last && history.length ? motifs(history.at(-1)!, history.length).find((m) => m.id === 'mate') : null;

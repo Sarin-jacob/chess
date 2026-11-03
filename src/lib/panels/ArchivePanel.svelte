@@ -1,6 +1,10 @@
 <script lang="ts">
   import { Chess } from 'chess.js';
+  import { cultivation } from '../cultivation.svelte';
   import { clearGames, deleteGame, listGames, saveGame, type GameRecord } from '../db';
+  import { LEVEL_NAMES } from '../engine';
+  import { openingOf } from '../openings';
+  import { trials } from '../trials.svelte';
   import { game } from '../game.svelte';
   import { review } from '../review.svelte';
   import { downloadPgn } from '../pgn';
@@ -114,11 +118,63 @@
     refresh();
   }
 
+  const stage = $derived(cultivation.stage);
+  const slain = $derived(trials.demons.length - trials.waiting.length);
+  const matchOn = $derived(game.active && !game.over && !game.study);
+
+  function faceToday() {
+    const d = trials.today();
+    if (d) trials.face(d);
+  }
+
+  // Openings you've played, grouped by family, with how they went. Worked out only when opened.
+  let showOpenings = $state(false);
+  const openings = $derived.by(() => {
+    if (!showOpenings) return [];
+    const by = new Map<string, { name: string; played: number; win: number; draw: number; loss: number; w: number; b: number }>();
+    for (const g of games) {
+      const o = outcome(g);
+      if (!g.you || o === 'live' || o === 'done') continue;
+      const c = new Chess();
+      try { c.loadPgn(g.pgn); } catch { continue; }
+      const name = openingOf(c.history({ verbose: true })).name;
+      if (!name) continue;
+      const family = name.split(':')[0];
+      const row = by.get(family) ?? { name: family, played: 0, win: 0, draw: 0, loss: 0, w: 0, b: 0 };
+      row.played++;
+      row[o]++;
+      row[g.you]++;
+      by.set(family, row);
+    }
+    return [...by.values()].sort((a, b) => b.played - a.played).slice(0, 10);
+  });
+
   const fmt = (t: number) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const modeLabel = { ai: 'vs Sect', local: 'Same device', lan: 'LAN' };
 </script>
 
 <section>
+  <div class="cult" title="Cultivation {cultivation.rating} (peak {cultivation.peak})">
+    <span class="hz">{stage.hz}</span>
+    <div>
+      <b>{stage.name}</b> <small>{stage.layerName}</small>
+      <div class="bar"><span style:width="{stage.progress * 100}%"></span></div>
+      <small>{cultivation.games ? `Cultivation ${cultivation.rating} · ${cultivation.games} rated ${cultivation.games === 1 ? 'duel' : 'duels'} against the sect` : 'Duel the sect to begin cultivating.'} · fairest foe: {LEVEL_NAMES[cultivation.fairLevel - 1]}</small>
+      <em>{stage.note}</em>
+    </div>
+  </div>
+
+  <div class="demons">
+    <span class="hz">心魔</span>
+    <div>
+      <b>Heart Demons</b>
+      <small>{trials.demons.length ? `${trials.waiting.length} await · ${slain} slain` : 'Born from your mistakes when you review a game.'}</small>
+    </div>
+    <button class="primary" onclick={faceToday} disabled={!trials.waiting.length || matchOn} title={matchOn ? 'Finish your match first' : 'A position from your own games where a better move was missed'}>
+      Face today's
+    </button>
+  </div>
+
   <div class="stats">
     <div><b>{stats.played}</b><span>Duels</span></div>
     <div class="win"><b>{stats.win}</b><span>Victories</span></div>
@@ -134,6 +190,22 @@
       </div>
     {/each}
   </div>
+
+  <details class="openings" bind:open={showOpenings}>
+    <summary>Openings you have walked</summary>
+    {#if openings.length}
+      <table>
+        <thead><tr><th></th><th title="Games">#</th><th title="Wins">W</th><th title="Draws">D</th><th title="Losses">L</th></tr></thead>
+        <tbody>
+          {#each openings as o}
+            <tr><td>{o.name}<small> · {o.w ? `${o.w} as White` : ''}{o.w && o.b ? ', ' : ''}{o.b ? `${o.b} as Black` : ''}</small></td><td>{o.played}</td><td class="win">{o.win}</td><td>{o.draw}</td><td class="loss">{o.loss}</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    {:else}
+      <p class="note">Finish a few games and their openings gather here.</p>
+    {/if}
+  </details>
 
   <ul class="list">
     {#each games as g (g.id)}
@@ -167,6 +239,23 @@
 
 <style>
   section { display: grid; gap: 0.7rem; }
+  .cult, .demons { display: flex; align-items: center; gap: 0.7rem; padding: 0.55rem 0.7rem; border-radius: 10px; border: 1px solid var(--panel-border); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .cult > div, .demons > div { display: grid; gap: 0.15rem; flex: 1; min-width: 0; }
+  .cult .hz, .demons .hz { font-family: 'Ma Shan Zheng', serif; font-size: 2rem; line-height: 1; color: var(--accent); text-shadow: 0 0 14px var(--glow); }
+  .demons .hz { font-size: 1.5rem; color: #c86be0; text-shadow: 0 0 10px rgba(200, 107, 224, 0.5); }
+  .cult b, .demons b { font: 700 0.95rem 'Cinzel', serif; }
+  .cult small, .demons small { color: var(--muted); font-size: 0.74rem; }
+  .cult em { font-size: 0.74rem; color: var(--muted); }
+  .bar { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 12%, transparent); overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--accent); }
+  .openings summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+  .openings table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.4rem; }
+  .openings th { color: var(--muted); font-weight: 600; text-align: right; }
+  .openings td { padding: 0.15rem 0; }
+  .openings td + td { text-align: right; width: 1.8rem; font-variant-numeric: tabular-nums; }
+  .openings small { color: var(--muted); }
+  .openings .win { color: #4ade80; }
+  .openings .loss { color: #f87171; }
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; text-align: center; }
   .stats div { background: color-mix(in srgb, var(--ink) 6%, transparent); border-radius: 8px; padding: 0.4rem 0; }
   .stats b { display: block; font-size: 1.3rem; font-family: 'Cinzel', serif; }

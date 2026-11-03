@@ -3,6 +3,7 @@
   import { scoreText } from '../engine';
   import { game } from '../game.svelte';
   import { FULL_GLOSSARY, TERMS } from '../glossary';
+  import { downloadPgn } from '../pgn';
   import Rich from '../Rich.svelte';
   import { review, VERDICTS, type PlyReview, type Verdict } from '../review.svelte';
   import { settings } from '../settings.svelte';
@@ -46,6 +47,21 @@
   /** Show the engine's choice for the move just reviewed, on the position before it. */
   function showBest(p: PlyReview) {
     review.haltAt(p.ply);
+  }
+
+  let shared = $state('');
+  /** Hand the annotated game to another app where the phone can, else copy it. */
+  async function share() {
+    const text = review.annotatedPgn(game.pgn(), game.history);
+    const file = new File([text], `${game.id}-annotated.pgn`, { type: 'application/x-chess-pgn' });
+    try {
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'A game reviewed by the Elder' });
+      else {
+        await navigator.clipboard.writeText(text);
+        shared = 'Copied';
+        setTimeout(() => (shared = ''), 1500);
+      }
+    } catch { /* cancelled */ }
   }
 
   const pairs = $derived.by(() => {
@@ -148,6 +164,11 @@
       <p class="muted">Nothing to scold. Play on, and the Elder will find something next time.</p>
     {/each}
 
+    <div class="row">
+      <button onclick={() => downloadPgn(review.annotatedPgn(game.pgn(), game.history), `${game.id}-annotated`)} title="PGN with the Elder's grades and notes, for lichess and other apps">⤓ Annotated PGN</button>
+      <button onclick={share}>{shared || 'Share it'}</button>
+    </div>
+
     {#if settings.glossary}
       <details class="glossary">
         <summary>Glossary of terms used here</summary>
@@ -214,6 +235,8 @@
   .tip.good { border-color: color-mix(in srgb, #4cc38a 60%, transparent); }
   .tip b small { color: var(--muted); font-weight: 400; }
   .tip p { margin: 0.2rem 0 0; font-size: 0.86rem; }
+  .row { display: flex; gap: 0.4rem; }
+  .row button { flex: 1; }
   .glossary { font-size: 0.85rem; }
   .glossary summary { cursor: pointer; color: var(--muted); }
   .glossary dl { margin: 0.5rem 0; display: grid; gap: 0.2rem; }

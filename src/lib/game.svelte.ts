@@ -191,7 +191,8 @@ class Game {
     const { white, black } = this.names();
     this.chess.setHeader('Event', this.mode === 'ai' ? 'Duel with the sect' : this.mode === 'lan' ? 'LAN duel' : 'Courtyard match');
     this.chess.setHeader('Site', this.realm.name);
-    this.chess.setHeader('Date', new Date(this.startedAt).toISOString().slice(0, 10).replace(/-/g, '.'));
+    const d = new Date(this.startedAt);
+    this.chess.setHeader('Date', `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`);
     this.chess.setHeader('White', white);
     this.chess.setHeader('Black', black);
     this.chess.setHeader('Result', this.result);
