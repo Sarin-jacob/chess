@@ -38,7 +38,7 @@
     <div class="note" style:--tone={r.result ? (r.result.kind === 'right' ? '#3fae55' : r.result.kind === 'close' ? '#e6c14f' : r.result.kind === 'wrong' ? '#e5484d' : 'var(--accent)') : 'var(--accent)'}>
       {#if !r.result}
         <b>⚔ Your move, {p.color === 'w' ? 'White' : 'Black'}.</b>
-        <p>{p.san} was played here. Find something stronger on the board.</p>
+        <p>{p.san} was played here: {VERDICTS[p.verdict].label} ({VERDICTS[p.verdict].plain}). Find something stronger on the board, or show the answer.</p>
       {:else}
         <b>{r.result.kind === 'right' ? '✓ Found it' : r.result.kind === 'close' ? '≈ Close' : r.result.kind === 'wrong' ? '✗ Not quite' : '…'}</b>
         <p>{r.result.text}</p>
@@ -46,7 +46,7 @@
     </div>
     <div class="ctl">
       {#if r.result && r.result.kind !== 'right' && r.result.kind !== 'checking'}<button onclick={() => review.retryAgain()}>↺ Try again</button>{/if}
-      {#if r.result && r.result.kind !== 'checking'}<button onclick={() => { review.endRetry(); }}>Show the answer</button>{/if}
+      {#if !r.result || r.result.kind !== 'checking'}<button onclick={() => review.endRetry()}>{r.result?.kind === 'right' ? 'See the notes' : 'Show the answer'}</button>{/if}
       <button class="primary play" onclick={() => review.toggle()}>▶ Play on</button>
       <button onclick={() => review.endRetry()} aria-label="Stop trying" title="Back to the walk">✕</button>
     </div>
@@ -60,7 +60,6 @@
         <p class="legend">
           <i style:background={v.color}></i>played {m?.san}
           {#if at.best}<i style:background="#3fae55"></i>stronger {at.best.san}{/if}
-          {#if at.best}<button class="link try" onclick={() => review.startRetry()}>⚔ Find it yourself</button>{/if}
         </p>
       </div>
     {:else if ended}
@@ -119,7 +118,7 @@
   .muted { color: var(--muted); }
   .studying { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: var(--muted); }
   .studying .grow { flex: 1; }
-  .try { margin-left: auto; font-size: 0.8rem; }
+
   .said { margin: 0; font-size: 0.84rem; color: var(--muted); }
   .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1.2rem; line-height: 1; color: var(--accent); }
   .note { border-left: 3px solid var(--tone, var(--accent)); padding: 0.25rem 0.55rem; border-radius: 4px; background: color-mix(in srgb, var(--tone, var(--accent)) 10%, transparent); display: grid; gap: 0.25rem; justify-items: start; }

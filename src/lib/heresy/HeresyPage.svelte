@@ -3,7 +3,7 @@
   // variants on their own rules engine, against the AI, on one device or over LAN.
   // Matches here are not saved to the archive.
   import type { Move } from 'chess.js';
-  import { onDestroy, type Component } from 'svelte';
+  import { onDestroy, tick, type Component } from 'svelte';
   import Board from '../Board.svelte';
   import { play, type Fx } from '../fx';
   import { LanLink, rememberRival, type LanMessage, type LinkState, type Rival } from '../lan';
@@ -93,6 +93,8 @@
 
   // Full view: the board fills the screen and nothing behind it scrolls.
   let focus = $state(false);
+  /** The 3D board's own full view. */
+  let full3d = $state(false);
   $effect(() => {
     if (!focus) return;
     enterFullscreen();
@@ -100,7 +102,19 @@
     const off = onFullscreenExit(() => (focus = false));
     return () => { off(); exitFullscreen(); document.documentElement.classList.remove('locked'); };
   });
-  $effect(() => { if (stage !== 'play' || settings.view3d) focus = false; });
+  $effect(() => { if (stage !== 'play') { focus = false; full3d = false; } });
+
+  /** Switch board, staying in full view if it was on. */
+  async function toggle3d() {
+    const wasFull = focus || full3d;
+    focus = false;
+    full3d = false;
+    settings.view3d = !settings.view3d;
+    if (!wasFull) return;
+    await tick();
+    if (settings.view3d) full3d = true;
+    else focus = true;
+  }
 
   // ---------- LAN ----------
   let link: LanLink | null = null;
@@ -534,9 +548,29 @@
             </div>
           {/snippet}
           {#snippet walk3d()}<HeresyWalk />{/snippet}
-          {#snippet hud()}
-            {@render bar(top)}
-            {@render bar(orientation)}
+          {#snippet hud(where: 'top' | 'bottom')}
+            {@render bar(where === 'top' ? top : orientation)}
+          {/snippet}
+          {#snippet controlsRow()}
+            <div class="controls">
+              {#if result && hist.length >= 2 && !walking}<button onclick={startReview} title="The Elder's review">鉴 Review</button>{/if}
+              {#if mode !== 'lan'}<button onclick={undo} disabled={!hist.length || thinking || walking}>↶ Undo</button>{/if}
+              <button onclick={() => (orientation = other(orientation))}>⇅ Flip</button>
+              <button onclick={resign} disabled={!!result || !hist.length}>⚑ Resign</button>
+              {#if mode === 'lan'}
+                <button onclick={offerAgain} disabled={again === 'sent' || linkState !== 'open'}>
+                  {again === 'received' ? '↻ Accept' : again === 'sent' ? 'Offered' : '↻ Again'}
+                </button>
+              {:else}
+                <button onclick={begin}>↻ Again</button>
+              {/if}
+              {#if focus || full3d}
+                <button onclick={() => { focus = false; full3d = false; }} title="Leave full view (Esc)">✕ Exit</button>
+              {:else}
+                <button onclick={() => (settings.view3d ? (full3d = true) : (focus = true))} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
+              {/if}
+              <button onclick={toggle3d} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
+            </div>
           {/snippet}
           {@render bar(top)}
           <div class="board-wrap">
@@ -549,6 +583,8 @@
               check={shown.check}
               arrows={shown.arrows}
               footer={walking ? walk3d : undefined}
+              controls={controlsRow}
+              bind:full={full3d}
               coords={settings.coords}
               realm={realm3d}
               {hud}
@@ -583,25 +619,7 @@
           {:else if mode === 'lan' && again === 'received'}
             <p class="lost">{opponent || 'Your rival'} wants another duel.</p>
           {/if}
-          <div class="controls">
-            {#if result && hist.length >= 2 && !walking}<button onclick={startReview} title="The Elder's review">鉴 Review</button>{/if}
-            {#if mode !== 'lan'}<button onclick={undo} disabled={!hist.length || thinking || walking}>↶ Undo</button>{/if}
-            <button onclick={() => (orientation = other(orientation))}>⇅ Flip</button>
-            <button onclick={resign} disabled={!!result || !hist.length}>⚑ Resign</button>
-            {#if mode === 'lan'}
-              <button onclick={offerAgain} disabled={again === 'sent' || linkState !== 'open'}>
-                {again === 'received' ? '↻ Accept' : again === 'sent' ? 'Offered' : '↻ Again'}
-              </button>
-            {:else}
-              <button onclick={begin}>↻ Again</button>
-            {/if}
-            <button onclick={() => (settings.view3d = !settings.view3d)} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
-            {#if focus}
-              <button onclick={() => (focus = false)} title="Leave full view (Esc)">✕ Exit</button>
-            {:else if !settings.view3d}
-              <button onclick={() => (focus = true)} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
-            {/if}
-          </div>
+          {@render controlsRow()}
         {:else if rules.shuffle}
           <!-- The formation to be played, so it can be rerolled before starting. -->
           <Board fen={toFen(startPos(rules, formation))} orientation={colorPick === 'b' ? 'b' : 'w'} movable={null} lastMove={null} check={null} coords={settings.coords} outlines={settings.outlines} pieceSet={settings.pieceSet} legalFrom={() => []} onmove={() => false} />

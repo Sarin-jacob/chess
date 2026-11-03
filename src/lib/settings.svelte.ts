@@ -19,6 +19,8 @@ export interface SettingsData {
   evalBar: boolean;
   /** Explain chess terms in reviews, with links to references. */
   glossary: boolean;
+  /** In review walks, try the better move yourself before the Elder shows it. */
+  findItYourself: boolean;
   level: number;
   name: string;
   /** True while the name is one we generated rather than one the player typed. */
@@ -43,6 +45,7 @@ const DEFAULTS: SettingsData = {
   keepAwake: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
   evalBar: false,
   glossary: true,
+  findItYourself: true,
   level: 3,
   name: '',
   nameAuto: true,

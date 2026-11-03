@@ -20,24 +20,27 @@
     coords?: boolean;
     realm: Realm;
     status?: string;
-    /** Extra heads-up info (names, clocks) shown in full view. */
-    hud?: Snippet;
-    /** Shown along the bottom in full view (the review's walk-through). */
+    /** The player bars for full view: the far side's at the top, the near side's at the bottom. */
+    hud?: Snippet<['top' | 'bottom']>;
+    /** Shown along the bottom in full view (the review's walk-through, a trial). */
     footer?: Snippet;
-    /** Whether the board fills the screen; bindable so the page can close it. */
+    /** The page's own controls row, so full view has the same buttons as the flat board's. */
+    controls?: Snippet;
+    /** Whether the board fills the screen; bindable so the page's ⛶ button can open and close it. */
     full?: boolean;
     legalFrom: (square: string) => Move[];
     onmove: (from: string, to: string, promotion?: string) => boolean;
     onflip?: () => void;
   }
 
-  let { fen, orientation, movable, lastMove, check, hint = null, arrows = [], coords = true, realm, status = '', hud, footer, full = $bindable(false), legalFrom, onmove, onflip }: Props = $props();
+  let { fen, orientation, movable, lastMove, check, hint = null, arrows = [], coords = true, realm, status = '', hud, footer, controls, full = $bindable(false), legalFrom, onmove, onflip }: Props = $props();
 
   let host: HTMLDivElement;
   let scene = $state<ChessScene | null>(null);
   let failed = $state(false);
-  /** Height of the full-view footer, so the board is framed above it rather than under it. */
-  let footH = $state(0);
+  /** Heights of what sits above and below the board in full view, so it is framed between them. */
+  let topH = $state(0);
+  let dockH = $state(0);
   // Full view also takes the browser full screen where it can, so swipes can't scroll the page.
   $effect(() => {
     if (!full) return;
@@ -157,7 +160,7 @@
 <svelte:window onkeydown={onkey} />
 
 <div class="b3d" class:full>
-  <div class="host" bind:this={host} style:bottom={full && footer ? `${footH + 12}px` : null}></div>
+  <div class="host" bind:this={host} style:top={full ? `${topH + 12}px` : null} style:bottom={full ? `${dockH + 12}px` : null}></div>
 
   {#if failed}
     <div class="fail">
@@ -165,18 +168,31 @@
       <button onclick={() => (settings.view3d = false)}>Back to the 2D board</button>
     </div>
   {:else}
-    {#if full && hud}<div class="hud">{@render hud()}</div>{/if}
-    {#if full && footer}<div class="footer" bind:clientHeight={footH}>{@render footer()}</div>{/if}
-    <div class="tools">
-      {#if full && status}<span class="status">{status}</span>{/if}
-      <button onclick={nextView} title="Camera angle: {viewLabel} (V)">◩ {viewLabel}</button>
-      {#if full}
-        {#if onflip}<button onclick={onflip} title="Turn the board around (F)">⇅ Flip</button>{/if}
-        <button onclick={() => (full = false)} title="Leave full view (Esc)">✕ Exit</button>
-      {:else}
-        <button onclick={() => (full = true)} title="Fill the screen" aria-label="Full view">⛶</button>
-      {/if}
-    </div>
+    {#if full}
+      <!-- Full view: the far player above, then the board, then your bar, any card and the controls. -->
+      <div class="top" bind:clientHeight={topH}>{#if hud}{@render hud('top')}{/if}</div>
+      <div class="dock" bind:clientHeight={dockH}>
+        {#if hud}{@render hud('bottom')}{/if}
+        {#if footer}{@render footer()}{/if}
+        <div class="line">
+          {#if status}<span class="status">{status}</span>{/if}
+          <button onclick={nextView} title="Camera angle: {viewLabel} (V)">◩ {viewLabel}</button>
+        </div>
+        {#if controls}
+          {@render controls()}
+        {:else}
+          <div class="line">
+            {#if onflip}<button onclick={onflip} title="Turn the board around (F)">⇅ Flip</button>{/if}
+            <button onclick={() => (full = false)} title="Leave full view (Esc)">✕ Exit</button>
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <div class="tools">
+        <button onclick={nextView} title="Camera angle: {viewLabel} (V)">◩ {viewLabel}</button>
+        {#if !controls}<button onclick={() => (full = true)} title="Fill the screen" aria-label="Full view">⛶</button>{/if}
+      </div>
+    {/if}
   {/if}
 
   {#if promo}
@@ -215,24 +231,28 @@
     z-index: 30;
     background: radial-gradient(ellipse at 50% 35%, var(--bg3), var(--bg2) 45%, var(--bg1));
   }
-  .hud {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 2;
-    display: grid;
-    gap: 0.3rem;
-    max-width: 45%;
-  }
-  .host { position: absolute; inset: 0; touch-action: none; }
-  .footer {
+  .top, .dock {
     position: absolute;
     left: 50%;
-    bottom: max(8px, env(safe-area-inset-bottom));
     transform: translateX(-50%);
     width: min(560px, calc(100% - 16px));
     z-index: 2;
+    display: grid;
+    gap: 0.4rem;
   }
+  .top { top: max(8px, env(safe-area-inset-top)); }
+  .dock { bottom: max(8px, env(safe-area-inset-bottom)); }
+  .line { display: flex; gap: 0.35rem; justify-content: center; align-items: center; flex-wrap: wrap; }
+  .line button, .status {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(8px);
+    color: var(--ink);
+    font-size: 0.8rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 8px;
+  }
+  .host { position: absolute; inset: 0; touch-action: none; }
   .tools {
     position: absolute;
     top: 8px;

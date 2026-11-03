@@ -45,8 +45,10 @@
   }
 
   /** Show the engine's choice for the move just reviewed, on the position before it. */
+  /** Asked for outright, so the answer is shown even with "find it yourself" on. */
   function showBest(p: PlyReview) {
     review.haltAt(p.ply);
+    review.endRetry();
   }
 
   let shared = $state('');
@@ -126,7 +128,9 @@
       {#if pts[current]}<line x1={pts[current][0]} x2={pts[current][0]} y1="0" y2={H} class="cur" />{/if}
     </svg>
 
-    {#if shown}
+    {#if review.retry}
+      <p class="muted">⚔ Find the better move on the board. The Elder's note waits until you've tried.</p>
+    {:else if shown}
       {@const v = VERDICTS[shown.verdict]}
       <div class="note" style:--tone={v.color}>
         <b>{Math.ceil(shown.ply / 2)}{shown.ply % 2 ? '.' : '…'} {shown.san} <span>{v.symbol} {v.label}</span> <small>({v.plain})</small></b>

@@ -69,7 +69,17 @@
     const off = onFullscreenExit(() => (focus = false));
     return () => { off(); exitFullscreen(); document.documentElement.classList.remove('locked'); };
   });
-  $effect(() => { if (settings.view3d) focus = false; });
+  /** Switch board, staying in full view if it was on. */
+  async function toggle3d() {
+    const wasFull = focus || full3d;
+    focus = false;
+    full3d = false;
+    settings.view3d = !settings.view3d;
+    if (!wasFull) return;
+    await tick();
+    if (settings.view3d) full3d = true;
+    else focus = true;
+  }
 
   let stageEl = $state<HTMLDivElement>();
   /** The 3D board's own full view. */
@@ -367,9 +377,8 @@
 
       {#snippet walk3d()}{#if trials.active}<TrialCard />{:else}<ReviewWalk oncounsel={counsel} />{/if}{/snippet}
 
-      {#snippet hud3d()}
-        {@render bar(top)}
-        {@render bar(bottom)}
+      {#snippet hud3d(where: 'top' | 'bottom')}
+        {@render bar(where === 'top' ? top : bottom)}
       {/snippet}
 
       {@render bar(top)}
@@ -389,6 +398,7 @@
             realm={game.realm}
             hud={hud3d}
             footer={trials.active || review.walking ? walk3d : undefined}
+            controls={controlsRow}
             bind:full={full3d}
             status={review.walking ? 'The Elder’s walk' : game.study ? 'Studying' : game.over ? verdict : game.thinking ? 'Opponent meditating…' : game.active ? (game.turn === 'w' ? 'White' : 'Black') + ' to move' : ''}
             legalFrom={view.legal}
@@ -438,6 +448,10 @@
       {:else if review.walking}
         <ReviewWalk oncounsel={counsel} />
       {/if}
+      {@render controlsRow()}
+    </div>
+
+    {#snippet controlsRow()}
       <div class="controls">
         {#if game.study}
           {#if !game.over && game.mode !== 'lan'}<button class="primary" onclick={() => { review.endWalk(); review.close(); game.play(); }}>▶ Resume this match</button>{/if}
@@ -446,12 +460,12 @@
           {#if game.rules.hints}<button onclick={() => game.askHint()} disabled={!game.movable}>✦ Hint</button>{/if}
         {/if}
         {#if game.canFlip}<button onclick={() => game.flip()} disabled={veiled}>⇅ Flip</button>{/if}
-        {#if focus}
-          <button onclick={() => (focus = false)} title="Leave full view (Esc)">✕ Exit</button>
-        {:else if !settings.view3d}
-          <button onclick={() => (focus = true)} disabled={veiled} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
+        {#if focus || full3d}
+          <button onclick={() => { focus = false; full3d = false; }} title="Leave full view (Esc)">✕ Exit</button>
+        {:else}
+          <button onclick={() => (settings.view3d ? (full3d = true) : (focus = true))} disabled={veiled} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
         {/if}
-        <button onclick={() => (settings.view3d = !settings.view3d)} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view of the realm'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
+        <button onclick={toggle3d} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view of the realm'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
         {#if !game.active || game.study || review.walking}
           <!-- Draw and resign only make sense mid-match. -->
         {:else if game.mode !== 'lan'}
@@ -466,7 +480,7 @@
           <button onclick={() => game.resign()} disabled={game.over || !game.history.length}>⚑ Resign</button>
         {/if}
       </div>
-    </div>
+    {/snippet}
 
     <aside class="panel" bind:this={panelEl}>
       <nav>

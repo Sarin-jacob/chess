@@ -10,6 +10,7 @@ import { TERMS } from './glossary';
 import { analyse, isMate, lanes, scoreText, stopAnalysis } from './engine';
 import { game } from './game.svelte';
 import { openingOf } from './openings';
+import { settings } from './settings.svelte';
 import { trials } from './trials.svelte';
 import type { EngineResponse } from './search';
 
@@ -278,6 +279,12 @@ class Review {
     game.hint = null;
     game.viewPly = ply - 1;
     this.halt = ply;
+    this.arrive();
+  }
+
+  /** At a turning point with "find it yourself" on, the answer stays hidden until you try. */
+  private arrive() {
+    if (settings.findItYourself && this.halted && this.plies[this.halt! - 1]?.best) this.startRetry();
   }
 
   /** Go to a position by hand; it halts if the next move is a turning point. */
@@ -289,6 +296,7 @@ class Review {
     game.hint = null;
     game.viewPly = to;
     this.halt = this.stops.has(to + 1) ? to + 1 : null;
+    this.arrive();
   }
 
   next() { this.stepTo(this.cur + 1); }
