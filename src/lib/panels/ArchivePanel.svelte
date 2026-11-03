@@ -2,10 +2,11 @@
   import { Chess } from 'chess.js';
   import { clearGames, deleteGame, listGames, saveGame, type GameRecord } from '../db';
   import { game } from '../game.svelte';
+  import { review } from '../review.svelte';
   import { downloadPgn } from '../pgn';
   import { REALMS, realmById } from '../realms';
 
-  let { onopen }: { onopen: () => void } = $props();
+  let { onopen, onreview }: { onopen: () => void; onreview: () => void } = $props();
 
   let games = $state<GameRecord[]>([]);
   let importError = $state('');
@@ -40,11 +41,23 @@
     return { ...s, realmWins };
   });
 
-  function open(g: GameRecord) {
+  function load(g: GameRecord, study: boolean) {
+    review.endWalk();
     game.leaveLan();
-    // LAN games can only be reviewed here, not continued.
-    game.resume(g.mode === 'lan' && g.result === '*' ? { ...g, result: '*', mode: 'local', you: null } : g);
+    // LAN games can only be looked at here, not continued.
+    game.resume(g.mode === 'lan' && g.result === '*' ? { ...g, mode: 'local' } : g, study || g.mode === 'lan');
+  }
+
+  /** Finished games open to read; unfinished ones pick up where they stopped. */
+  function open(g: GameRecord) {
+    load(g, false);
     onopen();
+  }
+
+  /** Any game, finished or not, opened for the Elder's walk-through. */
+  function reviewGame(g: GameRecord) {
+    load(g, true);
+    onreview();
   }
 
   async function remove(g: GameRecord) {
@@ -133,6 +146,7 @@
           <span class="res">{o === 'live' ? (g.mode === 'lan' ? 'unfinished' : 'resume') : g.result}</span>
         </button>
         <div class="acts">
+          {#if g.moves >= 2}<button class="hz-btn" onclick={() => reviewGame(g)} aria-label="Review with the Elder" title="Review with the Elder">鉴</button>{/if}
           <button onclick={() => downloadPgn(g.pgn, g.id)} aria-label="Download PGN" title="Download PGN">⤓</button>
           <button onclick={() => remove(g)} aria-label="Delete" title="Delete">✕</button>
         </div>
@@ -190,13 +204,14 @@
   }
   .list .main:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .chip { grid-area: chip; align-self: center; font-family: 'Ma Shan Zheng', serif; color: var(--c); font-size: 1.1rem; }
-  .who { grid-area: who; font-weight: 600; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who { grid-area: who; font-weight: 600; font-size: 0.88rem; overflow-wrap: anywhere; }
   .who i { color: var(--muted); font-weight: 400; }
   .meta { grid-area: meta; font-size: 0.72rem; color: var(--muted); }
   .res { grid-area: res; align-self: center; font-weight: 700; font-size: 0.8rem; }
   .acts { display: flex; }
-  .acts button { all: unset; cursor: pointer; padding: 0 0.55rem; color: var(--muted); }
+  .acts button { all: unset; cursor: pointer; padding: 0 0.45rem; color: var(--muted); }
   .acts button:hover { color: var(--ink); }
+  .acts .hz-btn { font-family: 'Ma Shan Zheng', serif; font-size: 1.15rem; color: var(--accent); }
   .empty { padding: 1rem; color: var(--muted); text-align: center; border: 0 !important; background: none !important; }
   .row { display: flex; gap: 0.4rem; }
   .row > * { flex: 1; }

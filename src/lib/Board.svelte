@@ -10,6 +10,8 @@
     lastMove: { from: string; to: string } | null;
     check: string | null;
     hint?: { from: string; to: string } | null;
+    /** Arrows drawn by the app (the review's played and better moves). */
+    arrows?: { from: string; to: string; color: string }[];
     coords?: boolean;
     /** Contrasting edge around pieces, so dark pieces show on dark squares. */
     outlines?: boolean;
@@ -19,7 +21,7 @@
     onmove: (from: string, to: string, promotion?: string) => boolean;
   }
 
-  let { fen, orientation, movable, lastMove, check, hint = null, coords = true, outlines = true, pieceSet = 'staunton', legalFrom, onmove }: Props = $props();
+  let { fen, orientation, movable, lastMove, check, hint = null, arrows = [], coords = true, outlines = true, pieceSet = 'staunton', legalFrom, onmove }: Props = $props();
 
   const FILES = 'abcdefgh';
   const PIECES = $derived(pieceImages(pieceSet));
@@ -271,8 +273,8 @@
     </div>
   {/each}
 
-  {#if marks.length || drawing}
-    {@const all = drawing ? [...marks, drawing] : marks}
+  {#if marks.length || drawing || arrows.length}
+    {@const all = [...arrows, ...marks, ...(drawing ? [drawing] : [])]}
     <svg class="marks" viewBox="0 0 8 8" aria-hidden="true">
       {#each all as m, i}
         {#if m.from === m.to}

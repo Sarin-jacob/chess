@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, type Component } from 'svelte';
+  import { onMount, tick, untrack, type Component } from 'svelte';
   import Board from './lib/Board.svelte';
   import { lastUnfinished } from './lib/db';
   import EvalBar from './lib/EvalBar.svelte';
@@ -11,10 +11,12 @@
   import RealmPanel from './lib/panels/RealmPanel.svelte';
   import SettingsPanel from './lib/panels/SettingsPanel.svelte';
   import { pieceImages } from './lib/pieceSets';
-  import { review } from './lib/review.svelte';
+  import { review, VERDICTS } from './lib/review.svelte';
+  import ReviewWalk from './lib/ReviewWalk.svelte';
   import { enterFullscreen, exitFullscreen, keepAwake, onFullscreenExit } from './lib/screen';
   import Scenery from './lib/Scenery.svelte';
   import { settings } from './lib/settings.svelte';
+  import Veil from './lib/Veil.svelte';
 
   type Tab = 'play' | 'moves' | 'archive' | 'realm' | 'settings';
   const TABS: { id: Tab; label: string; hz: string }[] = [
@@ -51,7 +53,7 @@
       .catch((e) => { console.warn('3D view failed to load', e); load3d = 'failed'; });
   });
 
-  $effect(() => keepAwake(settings.keepAwake && game.active && !game.over));
+  $effect(() => keepAwake(settings.keepAwake && game.active && !game.over && !game.study));
 
   // Full view for the flat board: the stage fills the screen and the page underneath can't scroll.
   let focus = $state(false);
@@ -63,6 +65,63 @@
     return () => { off(); exitFullscreen(); document.documentElement.classList.remove('locked'); };
   });
   $effect(() => { if (settings.view3d) focus = false; });
+
+  let stageEl = $state<HTMLDivElement>();
+  let panelEl = $state<HTMLElement>();
+
+  /** Bring the board into view (on phones the panels sit below it). */
+  function showBoard() {
+    const r = stageEl?.getBoundingClientRect();
+    if (r && !focus && (r.top < 0 || r.top > innerHeight * 0.35)) stageEl!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function showPanel(t: Tab) {
+    tab = t;
+    const r = panelEl?.getBoundingClientRect();
+    if (r && r.top > innerHeight * 0.6) panelEl!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // A match just began (or was opened): the gate slides open and the board comes into view.
+  let seenGame = '';
+  $effect(() => {
+    const id = game.active ? game.id : '';
+    if (id && id !== seenGame && ready) untrack(showBoard);
+    seenGame = id;
+  });
+
+  /** The board is only a picture until a match is set (or a LAN rival arrives). */
+  const veiled = $derived(!game.active || (game.mode === 'lan' && game.linkState !== 'open' && !game.history.length && !game.over));
+
+  /** From the end of the walk to the Elder's advice in the panel. */
+  async function counsel() {
+    focus = false;
+    review.open = true;
+    tab = 'moves';
+    await tick();
+    panelEl?.querySelector('.counsel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function startReview() {
+    if (game.history.length < 2) return;
+    review.start(game.id + ':' + game.history.length, game.history, game.you, game.result);
+    review.walk();
+  }
+  // The walk belongs to one game; leave it if that game changes underneath.
+  $effect(() => {
+    if (review.walking && review.key !== game.id + ':' + game.history.length) untrack(() => review.endWalk());
+  });
+  $effect(() => { if (review.walking) untrack(showBoard); });
+
+  /** At a turning point: the move played, in its verdict's colour, and the Elder's choice in green. */
+  const walkArrows = $derived.by(() => {
+    if (!review.walking || !review.halted) return [];
+    const p = review.plies[review.halt! - 1];
+    const m = game.history[review.halt! - 1];
+    if (!p || !m) return [];
+    const out: { from: string; to: string; color: string }[] = [{ from: m.from, to: m.to, color: VERDICTS[p.verdict].color }];
+    if (p.best) out.push({ from: p.best.from, to: p.best.to, color: '#3fae55' });
+    return out;
+  });
+  const bestSquares = $derived(walkArrows[1] ?? null);
 
   let intro = $state<{ key: number; name: string; hanzi: string; meaning: string; season: string } | null>(null);
 
@@ -137,7 +196,7 @@
   });
 
   function nameFor(c: Color) {
-    if (game.mode === 'local') return c === 'w' ? 'White' : 'Black';
+    if (game.mode === 'local' || !game.active) return c === 'w' ? 'White' : 'Black';
     if (c === game.you) return settings.name || 'You';
     if (game.mode === 'ai') return LEVEL_NAMES[game.level - 1];
     return game.opponent || (game.linkState === 'open' ? 'Rival' : 'Awaiting rival…');
@@ -173,8 +232,14 @@
   function onkey(e: KeyboardEvent) {
     if ((e.target as HTMLElement).closest('input, textarea')) return;
     if (e.key === 'Escape' && focus) focus = false;
-    else
-    if (e.key === 'ArrowLeft') game.step(-1);
+    else if (review.walking) {
+      if (e.key === 'ArrowLeft') review.prev();
+      else if (e.key === 'ArrowRight') review.next();
+      else if (e.key === ' ' && !(e.target as HTMLElement).closest('button')) review.toggle();
+      else if (e.key === 'f') game.flip();
+      else return;
+    }
+    else if (e.key === 'ArrowLeft') game.step(-1);
     else if (e.key === 'ArrowRight') game.step(1);
     else if (e.key === 'ArrowUp') game.step('start');
     else if (e.key === 'ArrowDown') game.step('end');
@@ -207,7 +272,7 @@
   </header>
 
   <main>
-    <div class="stage" class:focus>
+    <div class="stage" class:focus class:walking={review.walking} bind:this={stageEl}>
       {#snippet bar(c: Color)}
         {@const caps = captures.by[c]}
         {@const adv = c === 'w' ? captures.diff : -captures.diff}
@@ -232,8 +297,8 @@
       {/snippet}
 
       {@render bar(top)}
-      <div class="board-row" class:with-bar={settings.evalBar}>
-      {#if settings.evalBar}<EvalBar fen={game.shownFen} orientation={game.orientation} result={game.viewPly === null ? game.result : '*'} />{/if}
+      <div class="board-row" class:with-bar={settings.evalBar && !veiled}>
+      {#if settings.evalBar && !veiled}<EvalBar fen={game.shownFen} orientation={game.orientation} result={game.viewPly === null ? game.result : '*'} />{/if}
       <div class="board-wrap">
         {#if settings.view3d && Board3D}
           <Board3D
@@ -242,11 +307,11 @@
             movable={game.movable}
             lastMove={game.shownMove}
             check={game.inCheckSquare()}
-            hint={game.hint}
+            hint={bestSquares ?? game.hint}
             coords={settings.coords}
             realm={game.realm}
             hud={hud3d}
-            status={game.over ? verdict : game.thinking ? 'Opponent meditating…' : game.active ? (game.turn === 'w' ? 'White' : 'Black') + ' to move' : ''}
+            status={review.walking ? 'The Elder’s walk' : game.study ? 'Studying' : game.over ? verdict : game.thinking ? 'Opponent meditating…' : game.active ? (game.turn === 'w' ? 'White' : 'Black') + ' to move' : ''}
             legalFrom={(sq: string) => game.legalFrom(sq)}
             onmove={(f: string, t: string, p?: string) => game.tryMove(f, t, p)}
             onflip={() => game.flip()}
@@ -268,6 +333,7 @@
           lastMove={game.shownMove}
           check={game.inCheckSquare()}
           hint={game.hint}
+          arrows={walkArrows}
           coords={settings.coords}
           outlines={settings.outlines}
           pieceSet={settings.pieceSet}
@@ -275,8 +341,11 @@
           onmove={(f, t, p) => game.tryMove(f, t, p)}
         />
         {/if}
-        {#if game.viewPly !== null}
-          <button class="live-pill" onclick={() => game.step('end')}>Reviewing move {game.viewPly} · back to live ↦</button>
+        {#if game.viewPly !== null && !review.walking}
+          <button class="live-pill" onclick={() => game.step('end')}>Viewing move {game.viewPly} · back to {game.over || game.study ? 'the end' : 'live'} ↦</button>
+        {/if}
+        {#if veiled}
+          <Veil realm={game.realm} waiting={game.active} onplay={() => showPanel('play')} onarchive={() => showPanel('archive')} />
         {/if}
       </div>
       </div>
@@ -285,25 +354,24 @@
       {#if replyNote}
         <p class="reply-note" role="status">{replyNote} <button class="link" onclick={() => (replyNote = '')}>Dismiss</button></p>
       {/if}
-      {#if ready && !game.active}
-        <p class="idle-tip">
-          No duel underway — the board is yours to admire.
-          <button class="link" onclick={() => (tab = 'play')}>Set up a match in Play</button>
-        </p>
+      {#if review.walking}
+        <ReviewWalk oncounsel={counsel} />
       {/if}
       <div class="controls">
-        {#if game.active && game.mode !== 'lan'}
+        {#if game.study}
+          {#if !game.over && game.mode !== 'lan'}<button class="primary" onclick={() => { review.endWalk(); review.close(); game.play(); }}>▶ Resume this match</button>{/if}
+        {:else if game.active && game.mode !== 'lan' && !review.walking}
           {#if game.rules.undo}<button onclick={() => game.undo()} disabled={!game.history.length}>↶ Undo</button>{/if}
           {#if game.rules.hints}<button onclick={() => game.askHint()} disabled={!game.movable}>✦ Hint</button>{/if}
         {/if}
-        {#if game.canFlip}<button onclick={() => game.flip()}>⇅ Flip</button>{/if}
+        {#if game.canFlip}<button onclick={() => game.flip()} disabled={veiled}>⇅ Flip</button>{/if}
         {#if focus}
           <button onclick={() => (focus = false)} title="Leave full view (Esc)">✕ Exit</button>
         {:else if !settings.view3d}
-          <button onclick={() => (focus = true)} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
+          <button onclick={() => (focus = true)} disabled={veiled} title="Fill the screen; the page can't scroll while you play" aria-label="Full view">⛶</button>
         {/if}
         <button onclick={() => (settings.view3d = !settings.view3d)} title={settings.view3d ? 'Back to the flat board' : 'Immersive 3D view of the realm'}>{settings.view3d ? '▦ 2D' : '◈ 3D'}</button>
-        {#if !game.active}
+        {#if !game.active || game.study || review.walking}
           <!-- Draw and resign only make sense mid-match. -->
         {:else if game.mode !== 'lan'}
           <button onclick={() => game.resign()} disabled={game.over || !game.history.length}>⚑ Resign</button>
@@ -319,7 +387,7 @@
       </div>
     </div>
 
-    <aside class="panel">
+    <aside class="panel" bind:this={panelEl}>
       <nav>
         {#each TABS as t}
           <button class:on={tab === t.id} onclick={() => (tab = t.id)} title="{t.hz} — {t.label}">
@@ -330,7 +398,7 @@
       <div class="content">
         {#if tab === 'play'}<PlayPanel {joinCode} />
         {:else if tab === 'moves'}<MovesPanel />
-        {:else if tab === 'archive'}<ArchivePanel onopen={() => (tab = 'moves')} />
+        {:else if tab === 'archive'}<ArchivePanel onopen={() => (tab = 'moves')} onreview={() => { tab = 'moves'; startReview(); }} />
         {:else if tab === 'realm'}<RealmPanel />
         {:else}<SettingsPanel />{/if}
       </div>
@@ -354,7 +422,7 @@
         <button class="primary" onclick={newMatch} disabled={game.mode === 'lan' && (game.rematchOffer === 'sent' || game.linkState !== 'open')}>
           {game.mode === 'lan' ? (game.rematchOffer === 'received' ? 'Accept rematch' : game.rematchOffer === 'sent' ? 'Rematch offered' : 'Offer rematch') : 'Next match'}
         </button>
-        <button onclick={() => { dismissed = game.id + game.result; tab = 'moves'; if (game.history.length >= 2) review.start(game.id + ':' + game.history.length, game.history, game.you, game.result); }}>Review</button>
+        {#if game.history.length >= 2}<button onclick={() => { dismissed = game.id + game.result; tab = 'moves'; startReview(); }}>鉴 Review</button>{/if}
       </div>
     </div>
   </div>
@@ -446,7 +514,9 @@
     overscroll-behavior: none;
     touch-action: none;
   }
-  .stage.focus .idle-tip, .stage.focus .reply-note { display: none; }
+  /* Leave room for the walk's card under the board. */
+  .stage.focus.walking { grid-template-columns: min(100vw - 16px, 100dvh - 300px); }
+  .stage.focus .reply-note { display: none; }
   .loading3d {
     aspect-ratio: 1;
     display: grid;
@@ -510,7 +580,6 @@
   }
   .clock.run { background: var(--accent); color: var(--accent-ink); }
   .clock.low.run { background: #c0392b; color: #fff; }
-  .idle-tip { margin: 0.2rem 0 0; text-align: center; font-size: 0.85rem; color: var(--muted); }
   .reply-note {
     margin: 0.2rem 0 0;
     padding: 0.5rem 0.8rem;

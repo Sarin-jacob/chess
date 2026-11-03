@@ -24,8 +24,20 @@
   });
 
   const key = $derived(game.id + ':' + game.history.length);
-  // Mid-match the review would whisper moves to you, so it waits until the game is over.
-  const canReview = $derived(game.history.length >= 2 && !(game.active && !game.over));
+  // Mid-match the review would whisper moves to you, so it waits until the game is over
+  // (or the game was opened from the archive just to look at).
+  const canReview = $derived(game.history.length >= 2 && (!game.active || game.over || game.study));
+  const reviewed = $derived(review.key === key && review.status !== 'idle');
+
+  function openReview() {
+    review.start(key, game.history, game.you, game.result);
+    if (!reviewed) review.walk();
+  }
+
+  function go(ply: number) {
+    if (review.walking) review.stepTo(ply);
+    else game.viewPly = ply === game.history.length ? null : ply;
+  }
 
   async function copy() {
     try {
@@ -41,16 +53,18 @@
 {:else}
 <section>
   {#if canReview}
-    <button class="primary review" onclick={() => review.start(key, game.history, game.you, game.result)}>
-      <span class="hz">鉴</span> {review.key === key && review.status === 'done' ? 'Open the review' : 'Review with the Elder'}
+    <button class="primary review" onclick={openReview}>
+      <span class="hz">鉴</span> {reviewed ? 'Open the review' : 'Review with the Elder'}
     </button>
+  {:else if game.active && !game.over && game.history.length >= 2}
+    <p class="later">The Elder reviews a match once it is over.</p>
   {/if}
   <ol class="moves" bind:this={list}>
     {#each pairs as p}
       <li>
         <span class="n">{p.n}.</span>
-        <button class:cur={current === p.n * 2 - 1} onclick={() => (game.viewPly = p.n * 2 - 1 === game.history.length ? null : p.n * 2 - 1)}>{p.w}</button>
-        {#if p.b}<button class:cur={current === p.n * 2} onclick={() => (game.viewPly = p.n * 2 === game.history.length ? null : p.n * 2)}>{p.b}</button>{/if}
+        <button class:cur={current === p.n * 2 - 1} onclick={() => go(p.n * 2 - 1)}>{p.w}</button>
+        {#if p.b}<button class:cur={current === p.n * 2} onclick={() => go(p.n * 2)}>{p.b}</button>{/if}
       </li>
     {:else}
       <li class="empty">No moves yet. The board awaits.</li>
@@ -59,14 +73,14 @@
   </ol>
 
   <div class="nav">
-    <button onclick={() => game.step('start')} aria-label="First move">⏮</button>
-    <button onclick={() => game.step(-1)} aria-label="Previous move">◀</button>
-    <button onclick={() => game.step(1)} aria-label="Next move">▶</button>
-    <button onclick={() => game.step('end')} aria-label="Latest move">⏭</button>
+    <button onclick={() => go(0)} disabled={current === 0} aria-label="First move">⏮</button>
+    <button onclick={() => go(current - 1)} disabled={current === 0} aria-label="Previous move">◀</button>
+    <button onclick={() => go(current + 1)} disabled={current >= game.history.length} aria-label="Next move">▶</button>
+    <button onclick={() => go(game.history.length)} disabled={current >= game.history.length} aria-label="Latest move">⏭</button>
   </div>
   <div class="row">
-    <button onclick={copy}>{copied ? 'Copied!' : 'Copy PGN'}</button>
-    <button onclick={() => downloadPgn(game.pgn(), game.id)}>Download PGN</button>
+    <button onclick={copy} disabled={!game.history.length}>{copied ? 'Copied!' : 'Copy PGN'}</button>
+    <button onclick={() => downloadPgn(game.pgn(), game.id)} disabled={!game.history.length}>Download PGN</button>
   </div>
 </section>
 {/if}
@@ -95,4 +109,5 @@
   .review { display: flex; align-items: center; justify-content: center; gap: 0.4rem; }
   .review .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1.2rem; line-height: 1; }
   .nav button, .row button { flex: 1; }
+  .later { margin: 0; text-align: center; font-size: 0.8rem; color: var(--muted); }
 </style>

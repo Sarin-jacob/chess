@@ -126,10 +126,13 @@
     width: 5.5rem;
     height: 3.6rem;
     border-radius: 50%;
-    filter: blur(14px);
-    opacity: 0.75;
+    filter: blur(16px);
+    opacity: 0.4;
     animation: seep 7s ease-in-out infinite alternate;
   }
+  /* The whole cloud breathes, so it catches the eye now and then without shouting. */
+  .miasma { animation: breathe 6s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
   .miasma i:nth-child(1) { left: 10%; top: 20%; background: #7d3cc8; }
   .miasma i:nth-child(2) { right: 8%; top: 30%; background: #2f9e5e; animation-duration: 9s; animation-delay: -3s; }
   .miasma i:nth-child(3) { left: 35%; top: 5%; background: #b0283a; animation-duration: 11s; animation-delay: -6s; }
@@ -140,12 +143,12 @@
   }
   /* Touch screens can't hover to find the path, so the miasma seeps out to beckon instead. */
   @media (hover: none) {
-    .stray { opacity: 0.9; padding: 0.7rem 1.4rem; }
+    .stray { opacity: 0.75; padding: 0.6rem 1.3rem; }
     .stray .miasma { display: block; }
-    .stray .hz { color: #e8b4ff; text-shadow: 0 0 12px rgba(160, 80, 220, 0.9); font-size: 1.6rem; animation: pulse-glyph 4s ease-in-out infinite; }
-    .stray .whisper { max-height: 1.2rem; color: color-mix(in srgb, var(--ink) 75%, transparent); }
+    .stray .hz { color: #d9b8ee; text-shadow: 0 0 8px rgba(160, 80, 220, 0.55); font-size: 1.45rem; animation: pulse-glyph 6s ease-in-out infinite; }
+    .stray .whisper { max-height: 1.2rem; color: var(--muted); }
   }
-  @keyframes pulse-glyph { 50% { text-shadow: 0 0 22px rgba(200, 90, 255, 1), 0 0 4px rgba(255, 255, 255, 0.6); } }
+  @keyframes pulse-glyph { 50% { text-shadow: 0 0 14px rgba(190, 100, 245, 0.8); } }
   @media (prefers-reduced-motion: reduce) { .miasma i, .stray .hz { animation: none !important; } }
   .glossary { font-size: 0.85rem; margin-top: 0.4rem; }
   .glossary summary { cursor: pointer; color: var(--muted); }

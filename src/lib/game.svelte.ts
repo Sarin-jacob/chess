@@ -33,6 +33,8 @@ class Game {
 
   /** False until a match is begun or resumed; the board is just scenery until then. */
   active = $state(false);
+  /** Opened from the archive to look at, not to play: nothing moves until it is resumed. */
+  study = $state(false);
   fen = $state(this.chess.fen());
   history = $state.raw<Move[]>([]);
   result = $state<Result>('*');
@@ -88,11 +90,13 @@ class Game {
     cancelEngine();
     this.chess = new Chess();
     this.active = false;
+    this.study = false;
     this.thinking = false;
     this.result = '*';
     this.reason = '';
     this.hint = null;
     this.viewPly = null;
+    this.orientation = 'w';
     this.pickRealm();
     this.sync();
   }
@@ -102,6 +106,7 @@ class Game {
     this.thinking = false;
     this.chess = new Chess();
     this.active = true;
+    this.study = false;
     this.id = uid();
     this.mode = opts.mode;
     this.level = opts.level ?? settings.level;
@@ -136,7 +141,8 @@ class Game {
     applyRealm(this.realm);
   }
 
-  resume(rec: GameRecord) {
+  /** Pick a saved game back up; with `study`, only to look at it until `play()` is called. */
+  resume(rec: GameRecord, study = false) {
     cancelEngine();
     this.chess = new Chess();
     try {
@@ -145,6 +151,7 @@ class Game {
       this.chess.load(rec.fen);
     }
     this.active = true;
+    this.study = study;
     this.id = rec.id;
     this.mode = rec.mode;
     this.you = rec.you;
@@ -160,6 +167,16 @@ class Game {
     this.hint = null;
     this.setRealm(settings.realm === 'random' ? rec.realm : settings.realm);
     this.sync();
+    this.maybeEngine();
+  }
+
+  /** Carry on a match that was opened for study. */
+  play() {
+    if (!this.study) return;
+    this.study = false;
+    this.viewPly = null;
+    this.hint = null;
+    this.turnStart = Date.now();
     this.maybeEngine();
   }
 
@@ -222,7 +239,7 @@ class Game {
 
   /** Whose pieces the person on this device may move right now. */
   get movable(): Color | null {
-    if (!this.active || this.over || this.thinking || this.viewPly !== null) return null;
+    if (!this.active || this.study || this.over || this.thinking || this.viewPly !== null) return null;
     if (this.mode === 'local') return this.turn;
     if (this.mode === 'lan' && this.linkState !== 'open') return null;
     return this.turn === this.you ? this.you : null;
@@ -286,7 +303,7 @@ class Game {
   }
 
   private async maybeEngine() {
-    if (this.mode !== 'ai' || this.over || this.turn === this.you) return;
+    if (this.mode !== 'ai' || this.study || this.over || this.turn === this.you) return;
     this.thinking = true;
     const id = this.id;
     const ply = this.history.length;
@@ -368,7 +385,7 @@ class Game {
 
   /** Clocks start once White has moved, and stop while a LAN link is down. */
   get clockRunning(): boolean {
-    return !!this.rules.clock && this.active && !this.over && this.history.length > 0 && (this.mode !== 'lan' || this.linkState === 'open');
+    return !!this.rules.clock && this.active && !this.study && !this.over && this.history.length > 0 && (this.mode !== 'lan' || this.linkState === 'open');
   }
 
   private resetClocks() {
@@ -549,6 +566,7 @@ class Game {
         this.chess = new Chess();
         try { if (m.pgn) this.chess.loadPgn(m.pgn); } catch { /* fresh board */ }
         this.active = true;
+        this.study = false;
         this.id = m.gameId;
         this.mode = 'lan';
         this.you = other(m.hostColor);

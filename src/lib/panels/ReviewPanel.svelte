@@ -3,21 +3,9 @@
   import { scoreText } from '../engine';
   import { game } from '../game.svelte';
   import { FULL_GLOSSARY, TERMS } from '../glossary';
+  import Rich from '../Rich.svelte';
   import { review, VERDICTS, type PlyReview, type Verdict } from '../review.svelte';
   import { settings } from '../settings.svelte';
-
-  /** Split "[[term|words]]" tokens out of review text. */
-  function parts(text: string) {
-    const out: ({ text: string } | { term: string; shown: string })[] = [];
-    let last = 0;
-    for (const m of text.matchAll(/\[\[(\w+)(?:\|([^\]]+))?\]\]/g)) {
-      if (m.index > last) out.push({ text: text.slice(last, m.index) });
-      out.push({ term: m[1], shown: m[2] ?? TERMS[m[1]]?.word.toLowerCase() ?? m[1] });
-      last = m.index + m[0].length;
-    }
-    if (last < text.length) out.push({ text: text.slice(last) });
-    return out;
-  }
 
   const used = $derived.by(() => {
     const ids = new Set<string>(['accuracy', 'evaluation']);
@@ -27,7 +15,8 @@
   });
 
   const current = $derived(game.viewPly ?? game.history.length);
-  const shown = $derived<PlyReview | undefined>(review.plies[current - 1]);
+  // Halted before a turning point, the note is about the move that is coming.
+  const shown = $derived<PlyReview | undefined>(review.halted ? review.plies[review.halt! - 1] : review.plies[current - 1]);
 
   const counts = $derived.by(() => {
     const order: Verdict[] = ['best', 'excellent', 'good', 'forced', 'inaccuracy', 'mistake', 'miss', 'blunder'];
@@ -44,6 +33,7 @@
   const area = $derived(pts.length ? `M0 ${H} ` + pts.map(([x, y]) => `L${x.toFixed(1)} ${y.toFixed(1)}`).join(' ') + ` L${W} ${H} Z` : '');
 
   function go(ply: number) {
+    if (review.walking) return review.stepTo(ply);
     game.hint = null;
     game.viewPly = ply === game.history.length ? null : ply;
   }
@@ -55,8 +45,7 @@
 
   /** Show the engine's choice for the move just reviewed, on the position before it. */
   function showBest(p: PlyReview) {
-    game.viewPly = p.ply - 1;
-    game.hint = { from: p.best!.from, to: p.best!.to };
+    review.haltAt(p.ply);
   }
 
   const pairs = $derived.by(() => {
@@ -69,13 +58,7 @@
   });
 </script>
 
-{#snippet rich(text: string)}
-  {#each parts(text) as part}
-    {#if 'term' in part}
-      {#if settings.glossary && TERMS[part.term]}<a class="term" href={TERMS[part.term].url} target="_blank" rel="noopener" title={TERMS[part.term].def}>{part.shown}</a>{:else}{part.shown}{/if}
-    {:else}{part.text}{/if}
-  {/each}
-{/snippet}
+{#snippet rich(text: string)}<Rich {text} />{/snippet}
 
 {#snippet mark(p: PlyReview | undefined)}
   {#if p}
@@ -92,6 +75,9 @@
     <div><b>The Elder's Mirror</b><small>Every move weighed against the Elder's own.</small></div>
     <button class="x" onclick={() => review.close()} title="Back to the move list">✕</button>
   </header>
+  {#if review.status === 'done' && !review.walking}
+    <button class="primary" onclick={() => review.walk()}>▶ Walk through it on the board</button>
+  {/if}
 
   {#if review.status === 'running'}
     <p class="muted">The Elder studies the game… {Math.round(review.progress * 100)}%</p>
@@ -149,7 +135,7 @@
       </tbody>
     </table>
 
-    <h4>The Elder's counsel</h4>
+    <h4 class="counsel">The Elder's counsel</h4>
     {#each review.tips as t}
       <div class="tip {t.tone}">
         <b>{t.title}{#if !game.you}<small> · {t.color === 'w' ? 'White' : 'Black'}</small>{/if}</b>
@@ -222,7 +208,6 @@
   .tip.good { border-color: color-mix(in srgb, #4cc38a 60%, transparent); }
   .tip b small { color: var(--muted); font-weight: 400; }
   .tip p { margin: 0.2rem 0 0; font-size: 0.86rem; }
-  .term { color: var(--accent); text-decoration: underline dotted; text-underline-offset: 3px; }
   .glossary { font-size: 0.85rem; }
   .glossary summary { cursor: pointer; color: var(--muted); }
   .glossary dl { margin: 0.5rem 0; display: grid; gap: 0.2rem; }

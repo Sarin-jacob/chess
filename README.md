@@ -32,11 +32,11 @@
 - **House rules and clocks.** Before a match pick a time control (untimed, bullet to 30 min, with increments) and whether hints and takebacks are allowed. Clocks are synced in LAN duels; in LAN each player always sits at the bottom of their own board.
 - **Optional 3D board.** Each realm carves its own set — ice and glacier glass, maple and walnut, temple gold and lava-veined basalt, porcelain and red lacquer, jade and bronze, moon-silver and obsidian, rose salt and sandstone — with fixed Player / Overhead / Low camera angles (`v` to switch) and a full-screen view.
 - **Three piece sets, in 2D and 3D.** Staunton, Minimal (flat geometric silhouettes) and Xiangqi discs (lacquered discs with brushed 王 后 车 象 马 兵/卒 glyphs that face their owner). Pick one in Settings.
-- **Your archive, in your browser.** Every game is saved to IndexedDB as you play: resume unfinished matches, review any game move by move, see your win/loss record and which realms you've conquered, import/export PGN.
+- **Your archive, in your browser.** Every game is saved to IndexedDB as you play: resume unfinished matches, open any game (finished or not) to study or review it, see your win/loss record and which realms you've conquered, import/export PGN.
 - **Feels good to play.** Tap-to-move or drag-and-drop, legal-move hints, promotion picker, piece outlines that keep dark pieces visible on dark squares, right-click arrows and circles for planning (Shift/Alt change colour), synthesized wood-knock and temple-bell sounds, haptics on supported phones, keyboard review (← → ↑ ↓, `f` to flip).
 - **Phone friendly.** The screen stays awake during a match (Settings), and ⛶ fills the screen with the 2D board so a stray swipe can't scroll the page. The 3D full view does the same.
 - **Advantage bar** (Settings): the engine's score for the position on the board, in pawns or as mate-in-N.
-- **Review with the Elder.** After a game (or any game from the archive), every move is scored and graded, from *Heavenly* (best move) to *Qi Deviation* (blunder), with accuracy for each side, an advantage graph, the better move shown on the board, and advice drawn from your patterns: hanging pieces, missed tactics, early queen sorties, an uncastled king, a weak game phase. Chess terms link to a glossary and to references (can be turned off in Settings).
+- **Review with the Elder.** After a game (or any game from the archive), every move is scored and graded, from *Heavenly* (best move) to *Qi Deviation* (blunder), with accuracy for each side and an advantage graph. The Elder then walks the game on the board, halting before each turning point with the move played and the stronger one drawn as arrows; press play to go on to the next. It works in full view too. Then comes advice drawn from your patterns: hanging pieces, missed tactics, early queen sorties, an uncastled king, a weak game phase. Chess terms link to a glossary and to references (can be turned off in Settings).
 - **A path not on any map.** <details><summary>Spoiler</summary>A faint 邪 at the bottom of Settings leads to the Heterodox Paths (`#/heresy`): eight anarchy-chess variants on their own rules engine and AI, playable against the AI, on one device, or as LAN duels (the host picks the path; invite links open straight onto the page), on the 2D or 3D board, each with a full view. Unorthodox Sects: Holy Hell (forced en passant), Il Vaticano Conclave, Bongcloud Order (striding kings, no castling, ascend to win), Three Palms (three-check). Demonic Cult: Blood Furnace (atomic), Reversed Heart (antichess), Thousand Faces (a random back rank, mirrored, no castling) and Soul Devourer (a capturing piece becomes what it captured).</details>
 - **Installable & offline.** PWA manifest + service worker; once loaded it works without a network.
 - **Works in Firefox and Chromium** (desktop and mobile).
@@ -57,7 +57,9 @@ src/
   App.svelte            layout, player bars, start gate, result dialog
   lib/Board.svelte      board UI (pointer/touch, drag, promotion, animation, arrows)
   lib/pieceSets.ts      piece sets: Minimal and Xiangqi-disc SVGs, set list
-  lib/review.svelte.ts  game review: grading, accuracy, the Elder's counsel
+  lib/review.svelte.ts  game review: grading, accuracy, the Elder's counsel, the walk-through
+  lib/ReviewWalk.svelte the walk-through card and controls under the board
+  lib/Veil.svelte       painted gate over an idle board (Mural.svelte draws each realm's scene)
   lib/glossary.ts       chess terms and reference links for reviews
   lib/EvalBar.svelte    advantage bar
   lib/screen.ts         wake lock and browser full screen

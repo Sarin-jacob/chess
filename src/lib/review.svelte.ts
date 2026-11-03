@@ -1,8 +1,11 @@
 // Game review: the engine scores every position of a finished game, each move is graded by
 // how much winning chance it gave away, and the Elder turns the patterns into advice.
 // Text may hold glossary tokens, [[term]] or [[term|shown words]], see glossary.ts.
+// The walk replays the game on the board and halts before each turning point, with the
+// move played and the Elder's choice drawn as arrows.
 import { Chess, type Move } from 'chess.js';
 import { analyse, isMate, scoreText, stopAnalysis } from './engine';
+import { game } from './game.svelte';
 
 type Color = 'w' | 'b';
 
@@ -73,7 +76,26 @@ class Review {
   evals = $state.raw<number[]>([]);
   accuracy = $state<Record<Color, number>>({ w: 0, b: 0 });
   tips = $state.raw<Tip[]>([]);
+  /** The side reviewed for, or null when both sides are (pass-and-play, imports). */
+  you = $state<Color | null>(null);
   private run = 0;
+
+  /** The walk: the board replays the game by itself. */
+  walking = $state(false);
+  playing = $state(false);
+  /** Halted on the position before this ply, to show what should have been played. */
+  halt = $state<number | null>(null);
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * Plies the walk halts before. Your own inaccuracies and worse; with nobody to coach,
+   * every mistake on either side.
+   */
+  stops = $derived.by(() => {
+    const bad = (p: PlyReview) =>
+      this.you ? p.color === this.you && ['inaccuracy', 'mistake', 'miss', 'blunder'].includes(p.verdict) : ['mistake', 'miss', 'blunder'].includes(p.verdict);
+    return new Set(this.plies.filter((p) => p.best && bad(p)).map((p) => p.ply));
+  });
 
   async start(key: string, history: Move[], you: Color | null, result: string) {
     this.open = true;
@@ -81,6 +103,8 @@ class Review {
     const run = ++this.run;
     stopAnalysis('review');
     this.key = key;
+    this.you = you;
+    this.plies = [];
     this.status = 'running';
     this.progress = 0;
     const fens = [history[0].before, ...history.map((m) => m.after)];
@@ -107,6 +131,112 @@ class Review {
     this.status = 'idle';
     this.key = '';
     this.open = false;
+    this.endWalk();
+  }
+
+  // ---------- the walk ----------
+
+  private get cur() {
+    return game.viewPly ?? game.history.length;
+  }
+
+  private later(ms: number) {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.tick(), ms);
+  }
+
+  /** Replay the game from the first move; it starts once the analysis is done. */
+  walk() {
+    this.walking = true;
+    this.halt = null;
+    game.hint = null;
+    game.viewPly = 0;
+    this.playing = true;
+    this.later(600);
+  }
+
+  private tick() {
+    if (!this.walking || !this.playing) return;
+    if (this.status !== 'done') return this.later(400);
+    const n = game.history.length;
+    const next = this.cur + 1;
+    if (next > n) {
+      this.playing = false;
+      return;
+    }
+    if (this.stops.has(next) && this.halt !== next) {
+      this.haltAt(next);
+      return;
+    }
+    this.halt = null;
+    game.hint = null;
+    game.viewPly = next;
+    // Linger on a turning point once it has been played, so its result sinks in.
+    this.later(this.stops.has(next) ? 1600 : 850);
+  }
+
+  pause() {
+    this.playing = false;
+    clearTimeout(this.timer);
+  }
+
+  /** Play on from here; from the end it starts over. */
+  toggle() {
+    if (this.playing) return this.pause();
+    if (this.cur >= game.history.length) {
+      game.viewPly = 0;
+      this.halt = null;
+    }
+    this.playing = true;
+    this.later(250);
+  }
+
+  /** Stop on the position before `ply`, showing what was played and what was better. */
+  haltAt(ply: number) {
+    this.pause();
+    this.walking = true;
+    game.hint = null;
+    game.viewPly = ply - 1;
+    this.halt = ply;
+  }
+
+  /** Go to a position by hand; it halts if the next move is a turning point. */
+  stepTo(ply: number) {
+    this.pause();
+    const n = game.history.length;
+    const to = Math.max(0, Math.min(n, ply));
+    game.hint = null;
+    game.viewPly = to;
+    this.halt = this.stops.has(to + 1) ? to + 1 : null;
+  }
+
+  next() { this.stepTo(this.cur + 1); }
+  prev() { this.stepTo(this.cur - 1); }
+
+  /** True while the board shows the position before the halted move. */
+  get halted() {
+    return this.halt !== null && game.viewPly === this.halt - 1;
+  }
+
+  /** The turning point after the one on screen, if any. */
+  get nextStop(): number | null {
+    const from = this.halted ? this.halt! : this.cur;
+    for (const s of [...this.stops].sort((a, b) => a - b)) if (s > from) return s;
+    return null;
+  }
+
+  skipToNextStop() {
+    const s = this.nextStop;
+    if (s !== null) this.haltAt(s);
+  }
+
+  endWalk() {
+    this.pause();
+    if (!this.walking) return;
+    this.walking = false;
+    this.halt = null;
+    game.hint = null;
+    game.viewPly = null;
   }
 
   private grade(history: Move[], fens: string[], scores: { from: string; to: string; promotion?: string; score: number }[]) {
