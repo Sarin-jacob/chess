@@ -8,7 +8,7 @@
   import { play, type Fx } from '../fx';
   import { LanLink, rememberRival, type LanMessage, type LinkState, type Rival } from '../lan';
   import { realmById, type Realm } from '../realms';
-  import { enterFullscreen, exitFullscreen, keepAwake, onFullscreenExit } from '../screen';
+  import { enterFullscreen, exitFullscreen, holdFullscreen, keepAwake, onFullscreenExit } from '../screen';
   import { settings } from '../settings.svelte';
   import type { HeresyRequest, HeresyResponse } from './heresy.worker';
   import HeresyWalk from './HeresyWalk.svelte';
@@ -107,6 +107,16 @@
   /** Switch board, staying in full view if it was on. */
   async function toggle3d() {
     const wasFull = focus || full3d;
+    if (wasFull) holdFullscreen();
+    // Fetch the 3D board first, so full view never drops to the page while three.js loads.
+    if (wasFull && !settings.view3d && !Board3D) {
+      try {
+        Board3D = (await import('../Board3D.svelte')).default;
+      } catch {
+        return;
+      }
+      holdFullscreen();
+    }
     focus = false;
     full3d = false;
     settings.view3d = !settings.view3d;

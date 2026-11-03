@@ -15,7 +15,7 @@
   import { pieceImages } from './lib/pieceSets';
   import { review, VERDICTS } from './lib/review.svelte';
   import ReviewWalk from './lib/ReviewWalk.svelte';
-  import { enterFullscreen, exitFullscreen, keepAwake, onFullscreenExit } from './lib/screen';
+  import { enterFullscreen, exitFullscreen, holdFullscreen, keepAwake, onFullscreenExit } from './lib/screen';
   import Scenery from './lib/Scenery.svelte';
   import { settings } from './lib/settings.svelte';
   import TrialCard from './lib/TrialCard.svelte';
@@ -72,6 +72,16 @@
   /** Switch board, staying in full view if it was on. */
   async function toggle3d() {
     const wasFull = focus || full3d;
+    if (wasFull) holdFullscreen();
+    // Fetch the 3D board first, so full view never drops to the page while three.js loads.
+    if (wasFull && !settings.view3d && !Board3D) {
+      try {
+        Board3D = (await import('./lib/Board3D.svelte')).default;
+      } catch {
+        return;
+      }
+      holdFullscreen();
+    }
     focus = false;
     full3d = false;
     settings.view3d = !settings.view3d;
