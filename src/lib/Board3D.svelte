@@ -15,22 +15,29 @@
     lastMove: { from: string; to: string } | null;
     check: string | null;
     hint?: { from: string; to: string } | null;
+    /** Arrows drawn by the app (the review's played and better moves). */
+    arrows?: { from: string; to: string; color: string }[];
     coords?: boolean;
     realm: Realm;
     status?: string;
     /** Extra heads-up info (names, clocks) shown in full view. */
     hud?: Snippet;
+    /** Shown along the bottom in full view (the review's walk-through). */
+    footer?: Snippet;
+    /** Whether the board fills the screen; bindable so the page can close it. */
+    full?: boolean;
     legalFrom: (square: string) => Move[];
     onmove: (from: string, to: string, promotion?: string) => boolean;
     onflip?: () => void;
   }
 
-  let { fen, orientation, movable, lastMove, check, hint = null, coords = true, realm, status = '', hud, legalFrom, onmove, onflip }: Props = $props();
+  let { fen, orientation, movable, lastMove, check, hint = null, arrows = [], coords = true, realm, status = '', hud, footer, full = $bindable(false), legalFrom, onmove, onflip }: Props = $props();
 
   let host: HTMLDivElement;
   let scene = $state<ChessScene | null>(null);
   let failed = $state(false);
-  let full = $state(false);
+  /** Height of the full-view footer, so the board is framed above it rather than under it. */
+  let footH = $state(0);
   // Full view also takes the browser full screen where it can, so swipes can't scroll the page.
   $effect(() => {
     if (!full) return;
@@ -128,6 +135,7 @@
       lastMove: lastMove ? { from: lastMove.from, to: lastMove.to } : null,
       check,
       hint: hint ? { from: hint.from, to: hint.to } : null,
+      arrows: arrows.map((a) => ({ ...a })),
     });
   });
 
@@ -149,7 +157,7 @@
 <svelte:window onkeydown={onkey} />
 
 <div class="b3d" class:full>
-  <div class="host" bind:this={host}></div>
+  <div class="host" bind:this={host} style:bottom={full && footer ? `${footH + 12}px` : null}></div>
 
   {#if failed}
     <div class="fail">
@@ -158,6 +166,7 @@
     </div>
   {:else}
     {#if full && hud}<div class="hud">{@render hud()}</div>{/if}
+    {#if full && footer}<div class="footer" bind:clientHeight={footH}>{@render footer()}</div>{/if}
     <div class="tools">
       {#if full && status}<span class="status">{status}</span>{/if}
       <button onclick={nextView} title="Camera angle: {viewLabel} (V)">◩ {viewLabel}</button>
@@ -216,6 +225,14 @@
     max-width: 45%;
   }
   .host { position: absolute; inset: 0; touch-action: none; }
+  .footer {
+    position: absolute;
+    left: 50%;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: min(560px, calc(100% - 16px));
+    z-index: 2;
+  }
   .tools {
     position: absolute;
     top: 8px;

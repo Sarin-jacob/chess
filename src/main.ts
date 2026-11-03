@@ -8,8 +8,12 @@ const app = mount(App, {
   target: document.getElementById('app')!,
 });
 
+declare const __BUILD_ID__: string;
+
+// Each build registers the worker under its own id, so a new deploy reinstalls it and caches
+// that whole build for offline use.
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW registration failed', e));
+  navigator.serviceWorker.register(`./sw.js?v=${__BUILD_ID__}`).catch((e) => console.warn('SW registration failed', e));
 }
 
 export default app;

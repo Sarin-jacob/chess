@@ -36,9 +36,9 @@
 - **Feels good to play.** Tap-to-move or drag-and-drop, legal-move hints, promotion picker, piece outlines that keep dark pieces visible on dark squares, right-click arrows and circles for planning (Shift/Alt change colour), synthesized wood-knock and temple-bell sounds, haptics on supported phones, keyboard review (← → ↑ ↓, `f` to flip).
 - **Phone friendly.** The screen stays awake during a match (Settings), and ⛶ fills the screen with the 2D board so a stray swipe can't scroll the page. The 3D full view does the same.
 - **Advantage bar** (Settings): the engine's score for the position on the board, in pawns or as mate-in-N.
-- **Review with the Elder.** After a game (or any game from the archive), every move is scored and graded, from *Heavenly* (best move) to *Qi Deviation* (blunder), with accuracy for each side and an advantage graph. The Elder then walks the game on the board, halting before each turning point with the move played and the stronger one drawn as arrows; press play to go on to the next. It works in full view too. Then comes advice drawn from your patterns: hanging pieces, missed tactics, early queen sorties, an uncastled king, a weak game phase. Chess terms link to a glossary and to references (can be turned off in Settings).
+- **Review with the Elder.** After a game (or any game from the archive), every move is scored and graded, from *Heaven-Defying* (a brilliant sacrifice) and *Heavenly* (best move) to *Qi Deviation* (blunder), with accuracy for each side and an advantage graph. Lost and won positions are graded fairly too, and a mate hunt finds forced mates by checks up to four moves deep, so a missed mate in three is shown with its line. Moves are named: the opening and its book moves, forks, pins, skewers, discovered and double checks, sacrifices, and mate patterns from smothered and back-rank to Arabian and Boden's. The Elder then walks the game on the board, halting before each turning point with the move played and the stronger one drawn as arrows; press play to go on to the next. It works in 2D and 3D, and in full view. Then comes advice drawn from your patterns: hanging pieces, missed tactics, early queen sorties, an uncastled king, a weak game phase. Chess terms link to a glossary and to references (can be turned off in Settings).
 - **A path not on any map.** <details><summary>Spoiler</summary>A faint 邪 at the bottom of Settings leads to the Heterodox Paths (`#/heresy`): eight anarchy-chess variants on their own rules engine and AI, playable against the AI, on one device, or as LAN duels (the host picks the path; invite links open straight onto the page), on the 2D or 3D board, each with a full view. Unorthodox Sects: Holy Hell (forced en passant), Il Vaticano Conclave, Bongcloud Order (striding kings, no castling, ascend to win), Three Palms (three-check). Demonic Cult: Blood Furnace (atomic), Reversed Heart (antichess), Thousand Faces (a random back rank, mirrored, no castling) and Soul Devourer (a capturing piece becomes what it captured).</details>
-- **Installable & offline.** PWA manifest + service worker; once loaded it works without a network.
+- **Installable & offline.** PWA manifest + service worker that caches the whole build on install, so everything (3D board and hidden paths included) works without a network once the app has loaded.
 - **Works in Firefox and Chromium** (desktop and mobile).
 
 ## Develop
@@ -69,7 +69,9 @@ src/
   lib/three/            3D scene, piece geometry and per-realm materials
   lib/Scenery.svelte    sky, mountains and canvas weather per realm
   lib/game.svelte.ts    game state, rules and clocks, AI turns, persistence, LAN protocol
-  lib/engine.worker.ts  alpha-beta engine (runs off the main thread)
+  lib/search.ts         alpha-beta engine and mate hunt (engine.worker.ts runs it off the main thread)
+  lib/analysis.ts       review grading, and names for tactics and mate patterns
+  lib/openings.ts       named openings, matched by position
   lib/lan.ts            WebRTC data channel, compressed manual signalling, remembered rivals
   lib/QrScanner.svelte  camera QR reader (BarcodeDetector, falling back to jsQR)
   lib/db.ts             IndexedDB archive

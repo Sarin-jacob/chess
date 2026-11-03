@@ -1,9 +1,9 @@
 // The 3D board: renderer, fixed camera views, realm-carved pieces, highlights and picking.
 // The canvas is transparent so the flat realm scenery shows behind the board.
 import {
-  ACESFilmicToneMapping, BoxGeometry, CanvasTexture, CircleGeometry, Clock, Color, DirectionalLight, Group, HemisphereLight,
+  ACESFilmicToneMapping, BoxGeometry, CanvasTexture, CircleGeometry, Clock, Color, DirectionalLight, DoubleSide, Group, HemisphereLight,
   Mesh, MeshBasicMaterial, MeshPhysicalMaterial, PCFSoftShadowMap, PerspectiveCamera, PlaneGeometry, PMREMGenerator,
-  Raycaster, RingGeometry, Scene, ShadowMaterial, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,
+  Raycaster, RingGeometry, Scene, ShadowMaterial, Shape, ShapeGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,
   type BufferGeometry, type Object3D, type Texture,
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -33,6 +33,8 @@ export interface Marks {
   lastMove: { from: string; to: string } | null;
   check: string | null;
   hint: { from: string; to: string } | null;
+  /** Arrows laid on the board (the review's played and better moves). */
+  arrows?: { from: string; to: string; color: string }[];
 }
 
 const sqPos = (sq: string) => ({ x: FILES.indexOf(sq[0]) - 3.5, z: 4.5 - +sq[1] });
@@ -102,6 +104,7 @@ export class ChessScene {
   private frameMat = new MeshPhysicalMaterial({ roughness: 0.45, clearcoat: 0.5 });
   private overlays = new Map<string, Mesh>();
   private destGroup = new Group();
+  private arrowGroup = new Group();
   private pieceGroup = new Group();
   private coordGroup = new Group();
   private geos: Record<string, PieceGeometry>;
@@ -160,7 +163,7 @@ export class ChessScene {
     this.pieceSet = opts.pieceSet;
     this.geos = buildPieceGeometries(this.pieceSet);
     this.buildBoard();
-    this.scene.add(this.pieceGroup, this.destGroup, this.coordGroup);
+    this.scene.add(this.pieceGroup, this.destGroup, this.arrowGroup, this.coordGroup);
 
     const el = renderer.domElement;
     el.addEventListener('pointerdown', this.onDown);
@@ -387,6 +390,33 @@ export class ChessScene {
 
   // ---------- internals ----------
 
+  /** Flat arrows on the board's surface, shaped like the 2D board's. */
+  private drawArrows(arrows: { from: string; to: string; color: string }[]) {
+    for (const o of this.arrowGroup.children) {
+      const m = o as Mesh;
+      m.geometry.dispose();
+      (m.material as MeshBasicMaterial).dispose();
+    }
+    this.arrowGroup.clear();
+    for (const a of arrows) {
+      const p = sqPos(a.from);
+      const q = sqPos(a.to);
+      const len = Math.hypot(q.x - p.x, q.z - p.z);
+      if (!len) continue;
+      const [ux, uz] = [(q.x - p.x) / len, (q.z - p.z) / len];
+      // Board x/z map to shape x/-y, as the shape is turned flat below.
+      const at = (d: number, side: number) => new Vector2(p.x + ux * d - uz * side, -(p.z + uz * d + ux * side));
+      const tip = len - 0.08;
+      const neck = tip - 0.42;
+      const shape = new Shape([at(0.25, 0.08), at(neck, 0.08), at(neck, 0.24), at(tip, 0), at(neck, -0.24), at(neck, -0.08), at(0.25, -0.08)]);
+      const mesh = new Mesh(new ShapeGeometry(shape), new MeshBasicMaterial({ color: a.color, transparent: true, opacity: 0.82, depthWrite: false, side: DoubleSide }));
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = 0.012;
+      mesh.renderOrder = 3;
+      this.arrowGroup.add(mesh);
+    }
+  }
+
   private applyMarks() {
     if (!this.realm) return;
     const v = this.realm.vars;
@@ -407,6 +437,7 @@ export class ChessScene {
       }
     }
     this.destGroup.clear();
+    this.drawArrows(this.marks.arrows ?? []);
     for (const d of dests) {
       const m = new Mesh(d.capture ? this.ringGeo : this.dotGeo, this.destMat);
       const p = sqPos(d.to);

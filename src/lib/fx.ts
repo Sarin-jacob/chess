@@ -71,7 +71,9 @@ export function play(fx: Fx, opts: { sound: boolean; haptics: boolean }) {
   if (opts.sound) {
     try { SOUNDS[fx](); } catch { /* audio blocked until first gesture */ }
   }
-  if (opts.haptics && HAPTICS[fx] && 'vibrate' in navigator) {
+  // Browsers refuse (and log) vibration before the first tap, e.g. a resumed match where the sect moves first.
+  const touched = navigator.userActivation?.hasBeenActive ?? true;
+  if (opts.haptics && HAPTICS[fx] && 'vibrate' in navigator && touched) {
     try { navigator.vibrate(HAPTICS[fx]!); } catch { /* unsupported */ }
   }
 }

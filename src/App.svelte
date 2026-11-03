@@ -67,12 +67,14 @@
   $effect(() => { if (settings.view3d) focus = false; });
 
   let stageEl = $state<HTMLDivElement>();
+  /** The 3D board's own full view. */
+  let full3d = $state(false);
   let panelEl = $state<HTMLElement>();
 
   /** Bring the board into view (on phones the panels sit below it). */
   function showBoard() {
     const r = stageEl?.getBoundingClientRect();
-    if (r && !focus && (r.top < 0 || r.top > innerHeight * 0.35)) stageEl!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (r && !focus && !full3d && (r.top < 0 || r.top > innerHeight * 0.35)) stageEl!.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function showPanel(t: Tab) {
     tab = t;
@@ -89,11 +91,22 @@
   });
 
   /** The board is only a picture until a match is set (or a LAN rival arrives). */
+  let veilUp = $state(false);
+  // The gate stays a moment after it is no longer wanted, while its doors slide apart.
+  $effect(() => {
+    if (veiled) {
+      veilUp = true;
+      return;
+    }
+    const t = setTimeout(() => (veilUp = false), 1000);
+    return () => clearTimeout(t);
+  });
   const veiled = $derived(!game.active || (game.mode === 'lan' && game.linkState !== 'open' && !game.history.length && !game.over));
 
   /** From the end of the walk to the Elder's advice in the panel. */
   async function counsel() {
     focus = false;
+    full3d = false;
     review.open = true;
     tab = 'moves';
     await tick();
@@ -121,7 +134,6 @@
     if (p.best) out.push({ from: p.best.from, to: p.best.to, color: '#3fae55' });
     return out;
   });
-  const bestSquares = $derived(walkArrows[1] ?? null);
 
   let intro = $state<{ key: number; name: string; hanzi: string; meaning: string; season: string } | null>(null);
 
@@ -291,6 +303,8 @@
         </div>
       {/snippet}
 
+      {#snippet walk3d()}<ReviewWalk oncounsel={counsel} />{/snippet}
+
       {#snippet hud3d()}
         {@render bar(top)}
         {@render bar(bottom)}
@@ -307,10 +321,13 @@
             movable={game.movable}
             lastMove={game.shownMove}
             check={game.inCheckSquare()}
-            hint={bestSquares ?? game.hint}
+            hint={game.hint}
+            arrows={walkArrows}
             coords={settings.coords}
             realm={game.realm}
             hud={hud3d}
+            footer={review.walking ? walk3d : undefined}
+            bind:full={full3d}
             status={review.walking ? 'The Elder’s walk' : game.study ? 'Studying' : game.over ? verdict : game.thinking ? 'Opponent meditating…' : game.active ? (game.turn === 'w' ? 'White' : 'Black') + ' to move' : ''}
             legalFrom={(sq: string) => game.legalFrom(sq)}
             onmove={(f: string, t: string, p?: string) => game.tryMove(f, t, p)}
@@ -344,8 +361,8 @@
         {#if game.viewPly !== null && !review.walking}
           <button class="live-pill" onclick={() => game.step('end')}>Viewing move {game.viewPly} · back to {game.over || game.study ? 'the end' : 'live'} ↦</button>
         {/if}
-        {#if veiled}
-          <Veil realm={game.realm} waiting={game.active} onplay={() => showPanel('play')} onarchive={() => showPanel('archive')} />
+        {#if veilUp}
+          <Veil realm={game.realm} open={!veiled} waiting={game.active} onplay={() => showPanel('play')} onarchive={() => showPanel('archive')} />
         {/if}
       </div>
       </div>

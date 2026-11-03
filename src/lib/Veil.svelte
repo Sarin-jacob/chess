@@ -1,12 +1,12 @@
 <script lang="ts">
   // The gate over an idle board: two painted doors and a saying, so the board doesn't look
-  // playable before a match is set. When a match begins the doors slide apart.
-  import { cubicInOut } from 'svelte/easing';
-  import { fade } from 'svelte/transition';
+  // playable before a match is set. When a match begins (`open`) the doors slide apart; the
+  // page removes the gate a moment later. Plain CSS transitions, so a match that starts while
+  // the page is in the background (a LAN rival joining) still opens the gate.
   import Mural from './Mural.svelte';
   import type { Realm } from './realms';
 
-  let { realm, waiting = false, onplay, onarchive }: { realm: Realm; waiting?: boolean; onplay: () => void; onarchive: () => void } = $props();
+  let { realm, open = false, waiting = false, onplay, onarchive }: { realm: Realm; open?: boolean; waiting?: boolean; onplay: () => void; onarchive: () => void } = $props();
 
   // Sun Tzu in Lionel Giles's 1910 translation and the Tao Te Ching in James Legge's 1891,
   // both public domain; the rest are the sects' own.
@@ -32,24 +32,20 @@
     const t = setInterval(() => (i = (i + 1) % SAYINGS.length), 9000);
     return () => clearInterval(t);
   });
-
-  function door(_: Element, { dir }: { dir: number }) {
-    return { duration: 950, easing: cubicInOut, css: (t: number) => `transform: translateX(${(1 - t) * dir * 102}%)` };
-  }
 </script>
 
-<div class="veil" role="region" aria-label="No match underway">
-  <div class="door left" out:door|global={{ dir: -1 }}>
+<div class="veil" class:open role="region" aria-label="No match underway" aria-hidden={open}>
+  <div class="door left">
     <div class="paint"><Mural realm={realm.id} /></div>
   </div>
-  <div class="door right" out:door|global={{ dir: 1 }}>
+  <div class="door right">
     <div class="paint"><Mural realm={realm.id} /></div>
   </div>
 
-  <div class="scroll" out:fade|global={{ duration: 250 }}>
+  <div class="scroll">
     <span class="hz" title="{realm.hanzi}: {realm.meaning}">{realm.hanzi}</span>
     {#key i}
-      <blockquote in:fade={{ duration: 700 }}>
+      <blockquote>
         <p>“{SAYINGS[i][0]}”</p>
         <cite>— {SAYINGS[i][1]}</cite>
       </blockquote>
@@ -88,7 +84,12 @@
       linear-gradient(180deg, rgb(22 48 92 / 0.78), rgb(10 24 52 / 0.88));
     backdrop-filter: blur(3px) saturate(0.8);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent), inset 0 0 0 7px rgb(0 0 0 / 0.12), inset 0 0 0 8px color-mix(in srgb, var(--accent) 18%, transparent);
+    transition: transform 0.95s cubic-bezier(0.65, 0, 0.35, 1);
   }
+  .veil.open { pointer-events: none; }
+  .veil.open .left { transform: translateX(-102%); }
+  .veil.open .right { transform: translateX(102%); }
+  .veil.open .scroll { opacity: 0; }
   .door.left { left: 0; border-right: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
   .door.right { right: 0; }
   /* The mural spans both doors, so each shows its own half. */
@@ -111,6 +112,13 @@
     box-shadow: 0 10px 40px -10px rgb(0 0 0 / 0.6);
     backdrop-filter: blur(6px);
     color: #eef4ff;
+    transition: opacity 0.25s;
+  }
+  blockquote { animation: rise-in 0.7s ease-out; }
+  @keyframes rise-in { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .door, .scroll { transition: none; }
+    blockquote { animation: none; }
   }
   .hz { font-family: 'Ma Shan Zheng', serif; font-size: clamp(1.6rem, 6cqi, 2.4rem); line-height: 1; color: var(--accent); text-shadow: 0 0 18px var(--glow); }
   blockquote { margin: 0; display: grid; gap: 0.3rem; align-content: center; }
