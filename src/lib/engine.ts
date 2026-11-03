@@ -1,7 +1,4 @@
-import type { EngineRequest, EngineResponse } from './engine.worker';
-
-/** Same as the worker's: mate scores are ±(MATE - plies). Not imported, as that would run the worker here. */
-const MATE = 100000;
+import { MATE, type EngineRequest, type EngineResponse } from './search';
 
 let worker: Worker | null = null;
 let seq = 0;
@@ -31,7 +28,7 @@ export function bestMove(fen: string, level: number): Promise<EngineResponse> {
 const analysts = new Map<string, { worker: Worker; pending: Map<number, (r: EngineResponse) => void> }>();
 
 /** Score a position at full strength. Requests on one `channel` run one after another. */
-export function analyse(fen: string, opts: { depth: number; ms: number }, channel = 'bar'): Promise<EngineResponse> {
+export function analyse(fen: string, opts: { depth: number; ms: number; mate?: number }, channel = 'bar'): Promise<EngineResponse> {
   let a = analysts.get(channel);
   if (!a) {
     const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' });

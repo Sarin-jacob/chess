@@ -47,6 +47,9 @@
   {:else if played}
     {@const v = VERDICTS[played.verdict]}
     <p class="line">{label(played.ply)} {played.san} <span style:color={v.color}>{v.symbol} {v.label}</span></p>
+    {#if played.verdict === 'brilliant' || played.motifs.length || (played.verdict === 'book' && played.ply === review.opening.plies)}
+      <p class="said"><Rich text={played.comment} /></p>
+    {/if}
   {:else}
     <p class="line">The opening position. {review.stops.size ? `The Elder will halt at ${review.stops.size} turning point${review.stops.size === 1 ? '' : 's'}.` : ''}</p>
   {/if}
@@ -87,6 +90,7 @@
   }
   .line { margin: 0; font-size: 0.88rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .line span { font-weight: 600; }
+  .said { margin: 0; font-size: 0.84rem; color: var(--muted); }
   .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1.2rem; line-height: 1; color: var(--accent); }
   .note { border-left: 3px solid var(--tone, var(--accent)); padding: 0.25rem 0.55rem; border-radius: 4px; background: color-mix(in srgb, var(--tone, var(--accent)) 10%, transparent); display: grid; gap: 0.25rem; justify-items: start; }
   .note b { font-size: 0.9rem; }

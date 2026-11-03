@@ -19,7 +19,7 @@
   const shown = $derived<PlyReview | undefined>(review.halted ? review.plies[review.halt! - 1] : review.plies[current - 1]);
 
   const counts = $derived.by(() => {
-    const order: Verdict[] = ['best', 'excellent', 'good', 'forced', 'inaccuracy', 'mistake', 'miss', 'blunder'];
+    const order: Verdict[] = ['brilliant', 'book', 'best', 'excellent', 'good', 'forced', 'inaccuracy', 'mistake', 'miss', 'blunder'];
     return order
       .map((v) => ({ v, w: review.plies.filter((p) => p.verdict === v && p.color === 'w').length, b: review.plies.filter((p) => p.verdict === v && p.color === 'b').length }))
       .filter((r) => r.w || r.b);
@@ -84,6 +84,9 @@
     <div class="progress"><span style:width="{review.progress * 100}%"></span></div>
     <button onclick={() => review.cancel()}>Stop</button>
   {:else if review.status === 'done'}
+    {#if review.opening.name}
+      <p class="opening"><span class="hz">卷</span> {review.opening.name} <small>· {@render rich(`${review.opening.plies} ${review.opening.plies === 1 ? 'move' : 'moves'} of [[book|book]] theory`)}</small></p>
+    {/if}
     <div class="acc">
       {#each ['w', 'b'] as const as c}
         <div class:me={game.you === c}>
@@ -171,6 +174,9 @@
   .muted { margin: 0; }
   .progress { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 12%, transparent); overflow: hidden; }
   .progress span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+  .opening { margin: 0; font: 600 0.9rem 'Cinzel', serif; display: flex; align-items: baseline; gap: 0.35rem; flex-wrap: wrap; }
+  .opening .hz { font-family: 'Ma Shan Zheng', serif; font-size: 1.1rem; color: #b59a6a; }
+  .opening small { font: 400 0.75rem system-ui, sans-serif; color: var(--muted); }
   .acc { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
   .acc div { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 0.4rem; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--panel-border); }
   .acc div.me { border-color: var(--accent); }

@@ -67,6 +67,13 @@
     },
   };
   const cssVars = $derived(Object.entries(PALETTES[palette]).map(([k, v]) => `${k}: ${v}`).join('; '));
+  // The phone's status bar follows the path's colours here, and the realm's again on the way out.
+  $effect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const before = meta?.getAttribute('content');
+    meta?.setAttribute('content', PALETTES[palette]['--bg1']);
+    return () => { if (before) meta?.setAttribute('content', before); };
+  });
   // The 3D set borrows a realm's carving (jade and bronze for the sects, lava-veined basalt
   // for the cults) with the path's own colours.
   const realm3d = $derived<Realm>({ ...realmById(palette === 'demonic' ? 'volcano' : 'rain'), vars: PALETTES[palette] });

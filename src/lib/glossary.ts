@@ -26,6 +26,23 @@ export const TERMS: Record<string, Term> = {
   middlegame: { word: 'Middlegame', def: 'The phase after development, where plans, attacks and tactics decide most games.', url: WP + 'Middlegame' },
   endgame: { word: 'Endgame', def: 'The phase with few pieces left, where the king becomes active and passed pawns matter most.', url: WP + 'Chess_endgame' },
   simplify: { word: 'Simplification', def: 'Trading pieces when ahead in material, so the opponent has fewer chances to fight back.', url: WP + 'Exchange_(chess)' },
+  book: { word: 'Book move', def: 'A move from established opening theory, played by masters for generations.', url: WP + 'Chess_opening_book' },
+  skewer: { word: 'Skewer', def: 'An attack on a valuable piece that must move, exposing a lesser piece behind it to capture. A pin in reverse.', url: WP + 'Skewer_(chess)' },
+  sacrifice: { word: 'Sacrifice', def: 'Giving up material on purpose, for an attack, a mate or a better position.', url: WP + 'Sacrifice_(chess)' },
+  doubleCheck: { word: 'Double check', def: 'Check from two pieces at once. No block or capture can stop both, so the king must move.', url: WP + 'Double_check' },
+  discoveredCheck: { word: 'Discovered check', def: 'Moving a piece out of the way so another piece behind it gives check.', url: WP + 'Discovered_attack' },
+  enPassant: { word: 'En passant', def: 'A pawn that has just moved two squares can be captured as if it had moved only one, on the very next move.', url: WP + 'En_passant' },
+  underpromotion: { word: 'Underpromotion', def: 'Promoting a pawn to something other than a queen, usually a knight to give check or avoid stalemate.', url: WP + 'Promotion_(chess)#Underpromotion' },
+  smotheredMate: { word: 'Smothered mate', def: 'Mate by a knight against a king hemmed in by its own pieces.', url: WP + 'Smothered_mate' },
+  backRankMate: { word: 'Back-rank mate', def: 'Mate by a rook or queen along the back rank, where the king is trapped behind its own pawns.', url: WP + 'Back-rank_checkmate' },
+  scholarsMate: { word: 'Scholar’s Mate', def: 'The four-move mate on f7 (or f2) by queen and bishop, the classic beginner’s trap.', url: WP + 'Scholar%27s_mate' },
+  foolsMate: { word: 'Fool’s Mate', def: 'The fastest possible checkmate, after White weakens the king with f3 and g4.', url: WP + 'Fool%27s_mate' },
+  arabianMate: { word: 'Arabian mate', def: 'A rook next to a cornered king, guarded by a knight that also covers the escape square. One of the oldest known mates.', url: WP + 'Checkmate_pattern#Arabian_mate' },
+  anastasiasMate: { word: 'Anastasia’s mate', def: 'A rook or queen mates along the edge while a knight cuts off the king’s escape.', url: WP + 'Checkmate_pattern#Anastasia%27s_mate' },
+  bodensMate: { word: 'Boden’s mate', def: 'Two bishops on crossing diagonals mate a king boxed in by its own pieces.', url: WP + 'Checkmate_pattern#Boden%27s_mate' },
+  epauletteMate: { word: 'Epaulette mate', def: 'Mate by the queen against a king whose own pieces stand on both sides of it, like epaulettes.', url: WP + 'Checkmate_pattern#Epaulette_mate' },
+  ladderMate: { word: 'Ladder mate', def: 'Two heavy pieces take turns checking, driving the king to the edge rank by rank, like climbing a ladder.', url: WP + 'Checkmate_pattern#Ladder_mate' },
+  kissOfDeath: { word: 'Queen’s kiss', def: 'Mate by a queen right next to the king, guarded by another piece so the king cannot take her.', url: WP + 'Checkmate_pattern#Queen_mate' },
 };
 
 export const FULL_GLOSSARY = WP + 'Glossary_of_chess';
