@@ -21,6 +21,9 @@ export interface HPly {
   comment: string;
 }
 
+const VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+const NAME: Record<string, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' };
+
 const same = (a: VMove, b: VMove) => a.from === b.from && a.to === b.to && (a.promotion ?? '') === (b.promotion ?? '') && !!a.vatican === !!b.vatican;
 
 class HeresyReview {
@@ -86,7 +89,7 @@ class HeresyReview {
           resolve(e.data);
         };
         w.addEventListener('message', on);
-        w.postMessage({ id: mine, pos, variant, level: 4, ms: 500, depth: 6 } satisfies HeresyRequest);
+        w.postMessage({ id: mine, pos, variant, level: 4, ms: 700, depth: 8 } satisfies HeresyRequest);
       });
     let next = 0;
     let done = 0;
@@ -120,13 +123,16 @@ class HeresyReview {
       const g = grade(before, after, playedBest, legal.length === 1);
       const bestSan = !playedBest && best.move ? san(pos, best.move, rules, legal) : null;
       const better = bestSan ? ` Stronger was ${bestSan} (${scoreText(before)}).` : '';
+      // The rule behind the damage, when the board alone won't show it.
+      const shrank = rules.devour && m.captured && m.piece !== 'k' && VALUE[m.captured] < VALUE[m.piece];
+      const why = shrank && isBad(g.verdict) ? ` The ${NAME[m.piece]} devoured a ${NAME[m.captured!]} and became one.` : '';
       const label = LABEL[g.verdict];
       const comment =
         g.verdict === 'best' ? 'The Heavenly move: the Elder would play it too.'
           : g.verdict === 'forced' ? 'The only legal path.'
             : g.verdict === 'excellent' || g.verdict === 'good' ? `${label}.${better}`
-              : g.verdict === 'miss' ? `A winning chance slipped away: ${scoreText(before)} → ${scoreText(after)}.${better}`
-                : `${label}: ${scoreText(before)} → ${scoreText(after)}.${better}`;
+              : g.verdict === 'miss' ? `A winning chance slipped away: ${scoreText(before)} → ${scoreText(after)}.${why}${better}`
+                : `${label}: ${scoreText(before)} → ${scoreText(after)}.${why}${better}`;
       out.push({
         ply: i + 1,
         color: m.color,
